@@ -26,21 +26,33 @@
       "description": "Field name matching ignores case",
       "spec_ref": "§8",
       "pending": false,
-      "input": { "value": { "Password": "x", "API_TOKEN": "y", "Authorization": "z" } },
+      "input": {
+        "value": {
+          "Password": "x",
+          "API_TOKEN": "y",
+          "Authorization": "z"
+        }
+      },
       "expect": {
         "json": "{\"Password\":\"[REDACTED]\",\"API_TOKEN\":\"[REDACTED]\",\"Authorization\":\"[REDACTED]\"}"
       }
     },
     {
       "id": "redaction/substring-overmatch",
-      "description": "Substring matching redacts fields that merely contain a sensitive word; this is current behavior, not desired behavior",
-      "spec_ref": "§8",
+      "description": "Token matching does not redact fields that merely contain a sensitive word",
+      "spec_ref": "§8.1",
       "pending": false,
-      "input": { "value": { "monkey": "george", "keyboard": "qwerty", "tokenizer": "bpe" } },
-      "expect": {
-        "json": "{\"monkey\":\"[REDACTED]\",\"keyboard\":\"[REDACTED]\",\"tokenizer\":\"[REDACTED]\"}"
+      "input": {
+        "value": {
+          "monkey": "george",
+          "keyboard": "qwerty",
+          "tokenizer": "bpe"
+        }
       },
-      "note": "OQ-6 proposes word-boundary matching, which would flip all three to unredacted."
+      "expect": {
+        "json": "{\"monkey\":\"george\",\"keyboard\":\"qwerty\",\"tokenizer\":\"bpe\"}"
+      },
+      "note": "Previously asserted the opposite: under substring matching all three were redacted. The id is kept because ids are stable handles; it names the subject, not the outcome. Resolved by OQ-6."
     },
     {
       "id": "redaction/recurses",
@@ -48,7 +60,15 @@
       "spec_ref": "§8",
       "pending": false,
       "input": {
-        "value": { "user": { "name": "j", "credentials": { "password": "p", "id": 1 } } }
+        "value": {
+          "user": {
+            "name": "j",
+            "credentials": {
+              "password": "p",
+              "id": 1
+            }
+          }
+        }
       },
       "expect": {
         "json": "{\"user\":{\"name\":\"j\",\"credentials\":{\"password\":\"[REDACTED]\",\"id\":1}}}"
@@ -59,24 +79,51 @@
       "description": "Lists stay lists and their elements are still processed",
       "spec_ref": "§8",
       "pending": false,
-      "input": { "value": { "items": [{ "token": "a" }, { "safe": "b" }] } },
-      "expect": { "json": "{\"items\":[{\"token\":\"[REDACTED]\"},{\"safe\":\"b\"}]}" }
+      "input": {
+        "value": {
+          "items": [
+            {
+              "token": "a"
+            },
+            {
+              "safe": "b"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "json": "{\"items\":[{\"token\":\"[REDACTED]\"},{\"safe\":\"b\"}]}"
+      }
     },
     {
       "id": "redaction/custom-keys-replace-defaults",
       "description": "Supplying a key set replaces the defaults rather than extending them",
       "spec_ref": "§8",
       "pending": false,
-      "input": { "value": { "password": "p", "ssn": "123" }, "keys": ["ssn"] },
-      "expect": { "json": "{\"password\":\"p\",\"ssn\":\"[REDACTED]\"}" }
+      "input": {
+        "value": {
+          "password": "p",
+          "ssn": "123"
+        },
+        "keys": [
+          "ssn"
+        ]
+      },
+      "expect": {
+        "json": "{\"password\":\"p\",\"ssn\":\"[REDACTED]\"}"
+      }
     },
     {
       "id": "redaction/scalars-pass-through",
       "description": "A non-container input is returned unchanged",
       "spec_ref": "§8",
       "pending": false,
-      "input": { "value": "just a string" },
-      "expect": { "json": "\"just a string\"" }
+      "input": {
+        "value": "just a string"
+      },
+      "expect": {
+        "json": "\"just a string\""
+      }
     },
     {
       "id": "redaction/not-automatic",
@@ -88,13 +135,193 @@
         "runtime": "node",
         "level": "info",
         "message": "login",
-        "metadata": { "password": "hunter2" },
+        "metadata": {
+          "password": "hunter2"
+        },
         "format": "json",
         "assert": "no_implicit_redaction"
       },
       "expect": {
         "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"info\",\"message\":\"login\",\"runtime\":\"node\",\"metadata\":{\"password\":\"hunter2\"}}"
       }
+    },
+    {
+      "id": "redaction/word-boundary-separators",
+      "description": "snake_case, camelCase, kebab-case, PascalCase and SCREAMING_SNAKE tokenize identically and all redact",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "api_key": "a",
+          "apiKey": "b",
+          "API-KEY": "c",
+          "API_KEY": "d",
+          "ApiKey": "e",
+          "x-api-key": "f"
+        }
+      },
+      "expect": {
+        "json": "{\"api_key\":\"[REDACTED]\",\"apiKey\":\"[REDACTED]\",\"API-KEY\":\"[REDACTED]\",\"API_KEY\":\"[REDACTED]\",\"ApiKey\":\"[REDACTED]\",\"x-api-key\":\"[REDACTED]\"}"
+      },
+      "note": "The point of §8.1: an implementation that handles only some of these casings diverges silently."
+    },
+    {
+      "id": "redaction/word-boundary-joined-spellings",
+      "description": "Joined spellings in the default key set still redact, because tokenization alone cannot reach them",
+      "spec_ref": "§8.2",
+      "pending": false,
+      "input": {
+        "value": {
+          "authorization": "a",
+          "apikey": "b",
+          "authtoken": "c",
+          "accesstoken": "d",
+          "secretkey": "e"
+        }
+      },
+      "expect": {
+        "json": "{\"authorization\":\"[REDACTED]\",\"apikey\":\"[REDACTED]\",\"authtoken\":\"[REDACTED]\",\"accesstoken\":\"[REDACTED]\",\"secretkey\":\"[REDACTED]\"}"
+      },
+      "note": "These are one lowercase token each, the same shape as 'monkey'. They redact only because §8.2 lists them explicitly. An implementation that drops them from the default set leaks credentials that substring matching used to catch."
+    },
+    {
+      "id": "redaction/word-boundary-plurals",
+      "description": "A token matches a key or the key followed by s",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "tokens": "a",
+          "keys": "b",
+          "passwords": "c",
+          "apiKeys": "d",
+          "monkeys": "e"
+        }
+      },
+      "expect": {
+        "json": "{\"tokens\":\"[REDACTED]\",\"keys\":\"[REDACTED]\",\"passwords\":\"[REDACTED]\",\"apiKeys\":\"[REDACTED]\",\"monkeys\":\"e\"}"
+      },
+      "note": "monkeys stays: it is not 'key' + s."
+    },
+    {
+      "id": "redaction/word-boundary-digits",
+      "description": "Letter/digit boundaries split, so numbered fields still redact",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "key1": "a",
+          "token2": "b",
+          "api_key_2": "c",
+          "sha256": "d"
+        }
+      },
+      "expect": {
+        "json": "{\"key1\":\"[REDACTED]\",\"token2\":\"[REDACTED]\",\"api_key_2\":\"[REDACTED]\",\"sha256\":\"d\"}"
+      },
+      "note": "sha256 splits to sha|256 and matches nothing, confirming digit splitting does not over-match."
+    },
+    {
+      "id": "redaction/custom-keys-get-plurals",
+      "description": "The plural rule applies to caller-supplied keys, not only the defaults",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "ssn": "1",
+          "ssns": "2",
+          "password": "p"
+        },
+        "keys": [
+          "ssn"
+        ]
+      },
+      "expect": {
+        "json": "{\"ssn\":\"[REDACTED]\",\"ssns\":\"[REDACTED]\",\"password\":\"p\"}"
+      },
+      "note": "password is untouched because a supplied key set replaces the defaults."
+    },
+    {
+      "id": "redaction/multi-token-custom-keys",
+      "description": "A caller-supplied key is tokenized like a field name, so multi-token keys work in every casing",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "creditCard": "4111",
+          "credit_card": "4222",
+          "CREDIT-CARD": "4333",
+          "cardHolder": "j",
+          "monkey": "g"
+        },
+        "keys": [
+          "creditCard"
+        ]
+      },
+      "expect": {
+        "json": "{\"creditCard\":\"[REDACTED]\",\"credit_card\":\"[REDACTED]\",\"CREDIT-CARD\":\"[REDACTED]\",\"cardHolder\":\"j\",\"monkey\":\"g\"}"
+      },
+      "note": "An implementation that compares the key raw against field tokens redacts NONE of these: the field tokens are credit|card and neither equals 'creditcard'. It fails closed and silently, and only for callers who supplied their own keys. cardHolder is left alone because only one of the key's two tokens is present."
+    },
+    {
+      "id": "redaction/plural-direction-is-one-way",
+      "description": "A field token may be the plural of a key token, never the reverse",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "ssn": "a",
+          "ssns": "b"
+        },
+        "keys": [
+          "ssn"
+        ]
+      },
+      "expect": {
+        "json": "{\"ssn\":\"[REDACTED]\",\"ssns\":\"[REDACTED]\"}"
+      },
+      "note": "Paired with redaction/plural-direction-reverse. Nothing in the rule text forces a direction on its own, so both directions are pinned by fixture."
+    },
+    {
+      "id": "redaction/plural-direction-reverse",
+      "description": "A plural key does not reach a singular field",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "ssn": "a",
+          "ssns": "b"
+        },
+        "keys": [
+          "ssns"
+        ]
+      },
+      "expect": {
+        "json": "{\"ssn\":\"a\",\"ssns\":\"[REDACTED]\"}"
+      },
+      "note": "Keys are written singular by convention. Without this case two conforming implementations could disagree here."
+    },
+    {
+      "id": "redaction/empty-keys-match-nothing",
+      "description": "Keys that tokenize to nothing are discarded and match no field",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "a": 1,
+          "b": 2,
+          "password": "p"
+        },
+        "keys": [
+          "",
+          "---",
+          "   "
+        ]
+      },
+      "expect": {
+        "json": "{\"a\":1,\"b\":2,\"password\":\"p\"}"
+      },
+      "note": "The dangerous case. 'Every token of the key appears among the field tokens' is vacuously true for a key with no tokens, so an unguarded implementation redacts the entire object. password is untouched because a supplied key set replaces the defaults."
     }
   ]
 }
