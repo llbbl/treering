@@ -125,8 +125,7 @@
       "id": "serialization/error-non-enumerable",
       "description": "Non-enumerable own properties are still included, distinguishing the two serializers",
       "spec_ref": "§4.2",
-      "pending": true,
-      "pending_reason": "OQ-3. serializeError spreads only enumerable own properties, so it disagrees with safeStringify on this input.",
+      "pending": false,
       "input": {
         "value": {
           "err": {

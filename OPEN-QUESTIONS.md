@@ -11,7 +11,8 @@ true it is noted.
 
 ## OQ-1 — Repeated references reported as circular
 
-**Status:** spec diverges from implementation.
+**Status:** resolved on the `logan-logger` 2.0 branch; fixture stays `pending`
+until 2.0.0 publishes.
 
 `safeStringify` adds every visited object to a `WeakSet` that is never unwound:
 
@@ -28,9 +29,12 @@ the second occurrence. Logging `{ a: user, b: user }` loses `b` entirely.
 **Spec position (§4.1):** genuine cycles only. Track the current path, unwind on the
 way out.
 
-**Requires a fix in `logan-logger`.** This is a behavior change and would need a
-fixture update; it produces different output for existing users, so it belongs with
-the 2.0 work.
+**Fixed in `logan-logger`** by
+[#57](https://github.com/llbbl/logan-logger-ts/issues/57): `safeStringify` now
+tracks only the current traversal path and unwinds on the way out, so `[Circular]`
+means an ancestor of itself. Landing in 2.0.0 because it changes output for
+existing users. Flip `serialization/repeated-not-circular` to active once 2.0.0
+is published.
 
 ---
 
@@ -62,7 +66,7 @@ this reason.
 
 ## OQ-3 — Two disagreeing error serializers
 
-**Status:** spec picks one.
+**Status:** resolved. Fixture `serialization/error-non-enumerable` is active.
 
 `safeStringify` enumerates `Object.getOwnPropertyNames(value)` and copies everything
 except `name`/`message`/`stack`. `serializeError` instead spreads `...(error as any)`,
@@ -73,13 +77,18 @@ functions produce different objects for the same input.
 
 **Spec position (§4.2):** all own properties, in the order `name, message, stack, rest`.
 
-**Requires a fix in `logan-logger`** to unify the two paths.
+**Fixed in `logan-logger` v1.1.21** by
+[#59](https://github.com/llbbl/logan-logger-ts/issues/59): `safeStringify`'s error
+branch delegates to `serializeError`, which reads all own properties via
+`Object.getOwnPropertyNames` in the order `name, message, stack, rest`, omits
+`stack` when undefined, and yields `'[Throws]'` for an accessor that throws.
 
 ---
 
 ## OQ-4 — `timestamp` and `colorize` are declared but ignored
 
-**Status:** spec declares intent; fixtures pending.
+**Status:** resolved on the `logan-logger` 2.0 branch; fixtures stay `pending`
+until 2.0.0 publishes.
 
 `LoggerConfig` declares both. `formatLogEntry(entry, format)` accepts neither, so:
 
@@ -93,7 +102,19 @@ became a reported bug.
 **Spec position (§6.4):** both are honored, `colorize` affects the text form only.
 Fixtures are marked `pending` until the implementation complies.
 
-**Requires a fix in `logan-logger`.**
+**Fixed in `logan-logger`** by
+[#60](https://github.com/llbbl/logan-logger-ts/issues/60): `formatLogEntry` takes a
+`FormatOptions` argument and the console transport passes the config through. Both
+options affect the text form only — the JSON envelope always carries a timestamp
+and is never colorized.
+
+One thing the spec should probably say and currently does not: the implementation
+additionally gates `colorize` on stdout being a TTY, honoring `NO_COLOR` and
+`FORCE_COLOR`. Without that gate, honoring `colorize` starts writing ANSI escapes
+into every redirected log file. Worth a normative line in §6.4.
+
+Flip `envelope/timestamp-disabled` and `envelope/colorize-never-affects-json` to
+active once 2.0.0 is published.
 
 ---
 
