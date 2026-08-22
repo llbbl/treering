@@ -304,14 +304,37 @@ Merge rules per field:
 
 ### 6.3 Environment variables
 
+Every variable in this table is read **case-insensitively and after trimming surrounding
+whitespace**. There is no exception: a variable that behaved differently from its
+neighbours would be a trap, not a feature.
+
 | Variable | Effect |
 |---|---|
-| `LOG_LEVEL` | parsed per §1.3 |
-| `LOG_FORMAT` | accepted only if exactly `json` or `text`; otherwise ignored |
+| `LOG_LEVEL` | parsed per §1.3, but see the override below |
+| `LOG_FORMAT` | accepted only if `json` or `text`; anything else is **unset** |
 | `LOG_TIMESTAMP` | parsed as a boolean, below |
 | `LOG_COLOR` | parsed as a boolean, below |
 
-Booleans accept, case-insensitively and after trimming surrounding whitespace:
+An earlier revision said `LOG_FORMAT` was accepted "only if **exactly** `json` or
+`text`", which read as the one case-sensitive variable in the table. That was drift, not
+intent, and is withdrawn.
+
+**A variable that is set to the empty string is still set.** It is a value like any
+other, it matches nothing in the tables below, and it therefore takes the
+unrecognized-value path including the diagnostic. Implementations **MUST NOT** conflate
+"set to empty" with "not set" — a language whose empty string is falsy will do so by
+accident if the presence check is a truthiness test, and the mandated diagnostic then
+disappears while the resulting value stays accidentally correct.
+
+**`LOG_LEVEL` overrides §1.3's fallback.** §1.3 resolves an unrecognized level string to
+INFO, which is right for parsing a value in isolation. Applied to an environment
+variable it is wrong: a typo in an operator's shell would *raise* verbosity on a service
+that explicitly asked for `ERROR`, and quietly. So an unrecognized `LOG_LEVEL` is
+**unset** — warn, and fall through to the next source in §6.2 — like every other
+variable here. §1.3 still governs `parse`-style entry points that take a level string
+directly.
+
+Booleans accept:
 
 | Value | Result |
 |---|---|
@@ -409,6 +432,42 @@ implicitly based on an environment variable such as `NODE_ENV=production`.
 > Implicit production file logging is what made the reference implementation fail in
 > containers: it called `mkdir` on every logger construction regardless of whether the
 > working directory was writable.
+
+An unrecognized transport type **MUST** be reported on the diagnostic channel and
+skipped. It **MUST NOT** abort construction — one unusable destination is not a reason
+to lose the others, which is §7.2 applied at selection time.
+
+### 7.1.1 Type names are open
+
+The set of transport type names is **not** closed. An implementation **SHOULD** offer a
+registry so an application can add a transport and name it from configuration like any
+built-in. `console` is the only name every implementation **MUST** provide; `file` is
+required wherever the runtime has a filesystem.
+
+An implementation whose configuration type cannot express a registered name has a
+registry it cannot reach from config, which is a bug even though it type-checks. Naming
+this because the reference implementation shipped exactly that: `registerTransport`
+accepted any string while the config type was a closed union of four, so a registered
+transport needed a double cast to use.
+
+The cost is real and worth accepting deliberately: an open set means a mistyped name is
+no longer a compile-time error in a statically typed implementation. It surfaces at
+construction as the diagnostic above. Implementations **MUST NOT** close the set to
+recover that check.
+
+### 7.1.2 Presentation context
+
+A transport **MUST** be given the logger's `format`, `timestamp` and `colorize` when it
+is constructed, and **MUST** prefer its own options over them where both are supplied.
+A transport that cannot see them has to duplicate the logger's presentation settings or
+hardcode them, and the two then drift.
+
+This applies however the transport is supplied. If an implementation offers an escape
+hatch for passing a pre-built transport object, that object has no construction step to
+receive the context, so the implementation **MUST** also accept a factory form that does.
+An escape hatch that silently cannot see the context is not equivalent to a registered
+transport, and callers will not discover the difference until their output is formatted
+wrongly.
 
 ### 7.2 Isolation
 

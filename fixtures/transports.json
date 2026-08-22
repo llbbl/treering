@@ -1,0 +1,254 @@
+{
+  "suite": "transports",
+  "spec": "0.1.0-draft",
+  "cases": [
+    {
+      "id": "transports/omitted-yields-single-console",
+      "description": "With transports omitted there is exactly one console transport",
+      "spec_ref": "§7.1",
+      "pending": false,
+      "input": { "assert": "transport_list" },
+      "expect": { "transports": ["console"], "diagnostics": [] }
+    },
+    {
+      "id": "transports/supplied-exactly-and-in-order",
+      "description": "Supplied transports are constructed exactly, in the order given",
+      "spec_ref": "§7.1",
+      "pending": false,
+      "input": {
+        "assert": "transport_list",
+        "transports": [
+          { "type": "file", "options": { "filename": "ordered.log" } },
+          { "type": "console", "options": {} }
+        ]
+      },
+      "expect": { "transports": ["file", "console"], "diagnostics": [] }
+    },
+    {
+      "id": "transports/empty-list-is-honored",
+      "description": "An explicitly empty list means no destinations, not the console default",
+      "spec_ref": "§7.1",
+      "pending": false,
+      "input": { "assert": "transport_list", "transports": [] },
+      "expect": { "transports": [], "diagnostics": [] }
+    },
+    {
+      "id": "transports/file-is-not-implied-by-environment",
+      "description": "A production NODE_ENV must not add a file transport",
+      "spec_ref": "§7.1",
+      "pending": false,
+      "note": "Implicit production file logging is the failure §7.1 calls out by name: it made the reference implementation mkdir on every construction, in containers where nothing was writable.",
+      "input": { "assert": "transport_list", "env": { "NODE_ENV": "production" } },
+      "expect": { "transports": ["console"], "diagnostics": [] }
+    },
+    {
+      "id": "transports/unknown-type-reported-and-skipped",
+      "description": "An unrecognized type is reported and skipped without costing the others",
+      "spec_ref": "§7.1",
+      "pending": false,
+      "input": {
+        "assert": "transport_list",
+        "transports": [
+          { "type": "console", "options": {} },
+          { "type": "banana", "options": {} },
+          { "type": "file", "options": { "filename": "survivor.log" } }
+        ]
+      },
+      "expect": { "transports": ["console", "file"], "diagnostics": ["banana"] }
+    },
+    {
+      "id": "transports/unknown-type-alone-does-not-abort",
+      "description": "A configuration whose only transport is unrecognized still constructs a logger",
+      "spec_ref": "§7.1",
+      "pending": false,
+      "input": {
+        "assert": "transport_list",
+        "transports": [{ "type": "banana", "options": {} }]
+      },
+      "expect": { "transports": [], "diagnostics": ["banana"] }
+    },
+    {
+      "id": "transports/registered-name-is-usable-from-config",
+      "description": "A transport added to the registry can be named from configuration like a built-in",
+      "spec_ref": "§7.1.1",
+      "pending": false,
+      "note": "fixture-registry-probe is the reserved name every runner registers; see fixtures/README.md. An implementation whose configuration type cannot express a registered name fails here, which is the bug §7.1.1 names.",
+      "input": {
+        "assert": "transport_list",
+        "transports": [{ "type": "fixture-registry-probe", "options": {} }]
+      },
+      "expect": { "transports": ["fixture-registry-probe"], "diagnostics": [] }
+    },
+    {
+      "id": "transports/receives-presentation-context",
+      "description": "A transport is handed the logger's format, timestamp and colorize at construction",
+      "spec_ref": "§7.1.2",
+      "pending": false,
+      "input": {
+        "assert": "transport_context",
+        "config": { "format": "json", "timestamp": false, "colorize": true },
+        "transports": [{ "type": "fixture-registry-probe", "options": {} }]
+      },
+      "expect": {
+        "context": { "format": "json", "timestamp": false, "colorize": true },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "transports/presentation-context-follows-a-config-file",
+      "description": "Presentation settings read from a config file reach the transport too",
+      "spec_ref": "§7.1.2",
+      "pending": false,
+      "input": {
+        "assert": "transport_context",
+        "files": {
+          "logan.config.json": "{\"format\":\"json\",\"timestamp\":false,\"colorize\":true}"
+        },
+        "transports": [{ "type": "fixture-registry-probe", "options": {} }]
+      },
+      "expect": {
+        "context": { "format": "json", "timestamp": false, "colorize": true },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "transports/construction-failure-does-not-block-others",
+      "description": "A transport that throws while being built leaves the rest working",
+      "spec_ref": "§7.2",
+      "pending": false,
+      "note": "{\"type\":\"custom\",\"options\":{}} is a construction failure expressible in pure JSON: the custom transport needs options.transport, and nothing in JSON can supply a callable.",
+      "input": {
+        "assert": "transport_list",
+        "transports": [
+          { "type": "console", "options": {} },
+          { "type": "custom", "options": {} },
+          { "type": "file", "options": { "filename": "isolated.log" } }
+        ]
+      },
+      "expect": { "transports": ["console", "file"], "diagnostics": ["custom"] }
+    },
+    {
+      "id": "transports/construction-failure-names-the-transport",
+      "description": "The diagnostic for a failed construction names the transport",
+      "spec_ref": "§7.2",
+      "pending": false,
+      "note": "Only the name is asserted. §7.2 also requires the underlying cause, but its wording is the language's own and pinning it would make the assertion worthless — see the substring rule in fixtures/README.md.",
+      "input": {
+        "assert": "transport_list",
+        "transports": [{ "type": "custom", "options": {} }]
+      },
+      "expect": { "transports": [], "diagnostics": ["custom"] }
+    },
+    {
+      "id": "transports/per-transport-level-filters-independently",
+      "description": "A record reaches a transport only if it passes that transport's threshold",
+      "spec_ref": "§7.3",
+      "pending": false,
+      "input": {
+        "assert": "transport_writes",
+        "threshold": "debug",
+        "transports": [
+          { "type": "console", "options": { "name": "everything" } },
+          { "type": "console", "level": "error", "options": { "name": "errors-only" } }
+        ],
+        "emit": ["debug", "info", "warn", "error"]
+      },
+      "expect": {
+        "writes": {
+          "everything": ["debug", "info", "warn", "error"],
+          "errors-only": ["error"]
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "transports/logger-threshold-still-applies",
+      "description": "A permissive transport threshold cannot admit what the logger already dropped",
+      "spec_ref": "§7.3",
+      "pending": false,
+      "input": {
+        "assert": "transport_writes",
+        "threshold": "warn",
+        "transports": [
+          { "type": "console", "options": { "name": "inherits" } },
+          { "type": "console", "level": "debug", "options": { "name": "wants-everything" } }
+        ],
+        "emit": ["debug", "info", "warn", "error"]
+      },
+      "expect": {
+        "writes": {
+          "inherits": ["warn", "error"],
+          "wants-everything": ["warn", "error"]
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "transports/no-transport-level-means-logger-level",
+      "description": "A transport that declares no threshold accepts whatever the logger admits",
+      "spec_ref": "§7.3",
+      "pending": false,
+      "input": {
+        "assert": "transport_writes",
+        "threshold": "info",
+        "transports": [{ "type": "console", "options": { "name": "plain" } }],
+        "emit": ["debug", "info", "warn", "error"]
+      },
+      "expect": { "writes": { "plain": ["info", "warn", "error"] }, "diagnostics": [] }
+    },
+    {
+      "id": "transports/silent-transport-level-suppresses-everything",
+      "description": "A transport threshold of SILENT admits nothing, including ERROR",
+      "spec_ref": "§7.3",
+      "pending": false,
+      "input": {
+        "assert": "transport_writes",
+        "threshold": "debug",
+        "transports": [
+          { "type": "console", "level": "silent", "options": { "name": "muted" } },
+          { "type": "console", "options": { "name": "open" } }
+        ],
+        "emit": ["debug", "error"]
+      },
+      "expect": {
+        "writes": { "muted": [], "open": ["debug", "error"] },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "transports/level-as-string-from-a-config-file",
+      "description": "A per-transport level written as a string in a config file is normalized and honored",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "note": "Reading: §6.5 requires the same §1.3 conversion for a per-transport level as for the top-level one, and names the consequence of skipping it — an unconverted string makes the comparison indeterminate, so the transport filters nothing. A config file is the only place a string can reach that field in pure JSON, which is exactly where the reference implementation's file transport received every debug record. The assertion is therefore that errors-only receives ERROR and nothing else.",
+      "input": {
+        "assert": "transport_writes",
+        "threshold": "debug",
+        "files": {
+          "logan.config.json": "{\"transports\":[{\"type\":\"console\",\"level\":\"error\",\"options\":{\"name\":\"errors-only\"}}]}"
+        },
+        "emit": ["debug", "info", "warn", "error"]
+      },
+      "expect": { "writes": { "errors-only": ["error"] }, "diagnostics": [] }
+    },
+    {
+      "id": "transports/unparseable-level-from-a-config-file-is-dropped",
+      "description": "A per-transport level naming nothing is dropped with a warning, keeping the destination",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "note": "Dropping the field is what §6.5 requires, and dropping only the field is the right half to lose: taking the transport with it would discard records outright rather than over-deliver them.",
+      "input": {
+        "assert": "transport_writes",
+        "threshold": "debug",
+        "files": {
+          "logan.config.json": "{\"transports\":[{\"type\":\"console\",\"level\":\"loud\",\"options\":{\"name\":\"unfiltered\"}}]}"
+        },
+        "emit": ["debug", "error"]
+      },
+      "expect": {
+        "writes": { "unfiltered": ["debug", "error"] },
+        "diagnostics": ["level", "loud"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,880 @@
+{
+  "suite": "config",
+  "spec": "0.1.0-draft",
+  "cases": [
+    {
+      "id": "config/default-level-info",
+      "description": "With nothing supplied the threshold is INFO",
+      "spec_ref": "§6.1",
+      "pending": false,
+      "input": {
+        "assert": "effective_config"
+      },
+      "expect": {
+        "config": {
+          "level": 1
+        }
+      }
+    },
+    {
+      "id": "config/default-format-text",
+      "description": "With nothing supplied the format is text",
+      "spec_ref": "§6.1",
+      "pending": false,
+      "input": {
+        "assert": "effective_config"
+      },
+      "expect": {
+        "config": {
+          "format": "text"
+        }
+      }
+    },
+    {
+      "id": "config/default-timestamp-true",
+      "description": "With nothing supplied timestamps are on",
+      "spec_ref": "§6.1",
+      "pending": false,
+      "input": {
+        "assert": "effective_config"
+      },
+      "expect": {
+        "config": {
+          "timestamp": true
+        }
+      }
+    },
+    {
+      "id": "config/default-metadata-empty",
+      "description": "With nothing supplied the default metadata is the empty map",
+      "spec_ref": "§6.1",
+      "pending": false,
+      "input": {
+        "assert": "effective_config"
+      },
+      "expect": {
+        "config": {
+          "metadata": {}
+        }
+      }
+    },
+    {
+      "id": "config/default-transports-single-console",
+      "description": "With nothing supplied there is exactly one console transport",
+      "spec_ref": "§6.1",
+      "pending": false,
+      "note": "colorize is the one §6.1 field with no fixture: its default is runtime-dependent, so no value can be asserted portably. The cases below pin it only where a source names it explicitly.",
+      "input": {
+        "assert": "transport_list"
+      },
+      "expect": {
+        "transports": [
+          "console"
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/explicit-overrides-defaults",
+      "description": "Explicit config sits above library defaults",
+      "spec_ref": "§6.2",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "config": {
+          "level": "error",
+          "format": "json"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 3,
+          "format": "json"
+        }
+      }
+    },
+    {
+      "id": "config/env-overrides-explicit",
+      "description": "An environment variable outranks explicit config",
+      "spec_ref": "§6.2",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_LEVEL": "debug"
+        },
+        "config": {
+          "level": "error"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 0
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/explicit-survives-unset-env",
+      "description": "Explicit config stands when the variable that could override it is unset",
+      "spec_ref": "§6.2",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_LEVEL": null
+        },
+        "config": {
+          "level": "warn"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 2
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/metadata-merges-shallowly",
+      "description": "metadata merges across sources with later keys winning",
+      "spec_ref": "§6.2",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "sources": [
+          {
+            "metadata": {
+              "a": 1,
+              "b": 2
+            }
+          },
+          {
+            "metadata": {
+              "b": 3,
+              "c": 4
+            }
+          }
+        ]
+      },
+      "expect": {
+        "config": {
+          "metadata": {
+            "a": 1,
+            "b": 3,
+            "c": 4
+          }
+        }
+      }
+    },
+    {
+      "id": "config/metadata-merge-is-not-deep",
+      "description": "A nested metadata value is replaced wholesale, not merged recursively",
+      "spec_ref": "§6.2",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "sources": [
+          {
+            "metadata": {
+              "ctx": {
+                "a": 1,
+                "b": 2
+              }
+            }
+          },
+          {
+            "metadata": {
+              "ctx": {
+                "b": 3
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "config": {
+          "metadata": {
+            "ctx": {
+              "b": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "config/transports-replaced-wholesale",
+      "description": "A later source's transports replace the earlier list entirely",
+      "spec_ref": "§6.2",
+      "pending": false,
+      "input": {
+        "assert": "transport_list",
+        "sources": [
+          {
+            "transports": [
+              {
+                "type": "console",
+                "options": {}
+              },
+              {
+                "type": "file",
+                "options": {
+                  "filename": "wholesale.log"
+                }
+              }
+            ]
+          },
+          {
+            "transports": [
+              {
+                "type": "console",
+                "options": {}
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "transports": [
+          "console"
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/env-log-level-parsed-per-1-3",
+      "description": "LOG_LEVEL is parsed by the §1.3 rules, so case does not matter",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_LEVEL": "WaRnInG"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 2
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/env-log-format-accepted",
+      "description": "LOG_FORMAT=json is accepted",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_FORMAT": "json"
+        },
+        "config": {
+          "format": "text"
+        }
+      },
+      "expect": {
+        "config": {
+          "format": "json"
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/env-log-format-unrecognized-ignored",
+      "description": "LOG_FORMAT with a value that is neither json nor text is ignored",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "note": "§6.3 says 'ignored' for LOG_FORMAT and does not require a diagnostic, unlike the boolean row, so none is asserted here either way.",
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_FORMAT": "xml"
+        },
+        "config": {
+          "format": "text"
+        }
+      },
+      "expect": {
+        "config": {
+          "format": "text"
+        }
+      }
+    },
+    {
+      "id": "config/env-log-format-is-case-insensitive",
+      "description": "LOG_FORMAT is matched case-insensitively and trimmed, like every other variable in the table",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "note": "An earlier revision of §6.3 said LOG_FORMAT was accepted only if *exactly* json or text, which read as the one case-sensitive variable in the table. That was withdrawn as drift: a single variable behaving differently from its neighbours is a trap. Authoring this case is what surfaced it.",
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_FORMAT": "  JSON  "
+        },
+        "config": {
+          "format": "text"
+        }
+      },
+      "expect": {
+        "config": {
+          "format": "json"
+        }
+      }
+    },
+    {
+      "id": "config/env-boolean-true-and-1",
+      "description": "LOG_TIMESTAMP=true and LOG_COLOR=1 both mean true",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_TIMESTAMP": "true",
+          "LOG_COLOR": "1"
+        },
+        "config": {
+          "timestamp": false,
+          "colorize": false
+        }
+      },
+      "expect": {
+        "config": {
+          "timestamp": true,
+          "colorize": true
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/env-boolean-yes-and-on",
+      "description": "LOG_TIMESTAMP=yes and LOG_COLOR=on both mean true",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_TIMESTAMP": "yes",
+          "LOG_COLOR": "on"
+        },
+        "config": {
+          "timestamp": false,
+          "colorize": false
+        }
+      },
+      "expect": {
+        "config": {
+          "timestamp": true,
+          "colorize": true
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/env-boolean-false-and-0",
+      "description": "LOG_TIMESTAMP=false and LOG_COLOR=0 both mean false",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_TIMESTAMP": "false",
+          "LOG_COLOR": "0"
+        },
+        "config": {
+          "timestamp": true,
+          "colorize": true
+        }
+      },
+      "expect": {
+        "config": {
+          "timestamp": false,
+          "colorize": false
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/env-boolean-no-and-off",
+      "description": "LOG_TIMESTAMP=no and LOG_COLOR=off both mean false",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_TIMESTAMP": "no",
+          "LOG_COLOR": "off"
+        },
+        "config": {
+          "timestamp": true,
+          "colorize": true
+        }
+      },
+      "expect": {
+        "config": {
+          "timestamp": false,
+          "colorize": false
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/env-boolean-ignores-case-and-whitespace",
+      "description": "Boolean values are trimmed and compared case-insensitively",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_TIMESTAMP": "  TRUE  ",
+          "LOG_COLOR": "\tOff\n"
+        },
+        "config": {
+          "timestamp": false,
+          "colorize": true
+        }
+      },
+      "expect": {
+        "config": {
+          "timestamp": true,
+          "colorize": false
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/env-boolean-unrecognized-is-unset-not-false",
+      "description": "An unparseable boolean falls through to the source below and warns",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "note": "The value under it is true, so treating 'banana' as false would be visible. §6.3 forbids exactly that.",
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_TIMESTAMP": "banana"
+        },
+        "config": {
+          "timestamp": true
+        }
+      },
+      "expect": {
+        "config": {
+          "timestamp": true
+        },
+        "diagnostics": [
+          "LOG_TIMESTAMP",
+          "banana"
+        ]
+      }
+    },
+    {
+      "id": "config/env-boolean-unrecognized-does-not-force-true",
+      "description": "An unparseable boolean falls through in the other direction too",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_COLOR": "maybe"
+        },
+        "config": {
+          "colorize": false
+        }
+      },
+      "expect": {
+        "config": {
+          "colorize": false
+        },
+        "diagnostics": [
+          "LOG_COLOR",
+          "maybe"
+        ]
+      }
+    },
+    {
+      "id": "config/env-boolean-empty-string-is-unrecognized",
+      "description": "An empty boolean value is unrecognized, not unset: it warns and falls through",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "note": "The third state is 'unset', and §6.3 reaches it only via 'anything else', which warns. An empty string is a value that is set and is not in either accepted list, so it must warn — distinct from the variable not being present at all, which must not.",
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_TIMESTAMP": ""
+        },
+        "config": {
+          "timestamp": true
+        }
+      },
+      "expect": {
+        "config": {
+          "timestamp": true
+        },
+        "diagnostics": [
+          "LOG_TIMESTAMP"
+        ]
+      }
+    },
+    {
+      "id": "config/env-level-unrecognized-falls-through",
+      "description": "An unrecognized LOG_LEVEL is unset: it warns and leaves the explicit level standing",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "note": "§1.3 resolves an unrecognized level string to INFO, which is right for parsing a value in isolation and wrong for an environment variable — a typo in an operator shell would *raise* verbosity on a service that asked for ERROR, quietly. §6.3 now overrides §1.3 for this variable. Authoring this case is what surfaced the conflict.",
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_LEVEL": "verbose"
+        },
+        "config": {
+          "level": "error"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 3
+        },
+        "diagnostics": [
+          "LOG_LEVEL"
+        ]
+      }
+    },
+    {
+      "id": "config/env-clean-parse-is-silent",
+      "description": "Every variable parsing cleanly produces no diagnostics at all",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_LEVEL": "warn",
+          "LOG_FORMAT": "json",
+          "LOG_TIMESTAMP": "true",
+          "LOG_COLOR": "false"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 2,
+          "format": "json",
+          "timestamp": true,
+          "colorize": false
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/env-unset-is-silent",
+      "description": "Variables that are not set warn about nothing",
+      "spec_ref": "§6.3",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "LOG_LEVEL": null,
+          "LOG_FORMAT": null,
+          "LOG_TIMESTAMP": null,
+          "LOG_COLOR": null
+        },
+        "config": {
+          "level": "debug"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 0
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/file-logan-config-json-is-first-candidate",
+      "description": "logan.config.json is discovered and applied",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "logan.config.json": "{\"level\":\"warn\"}"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 2
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/file-loganrc-is-parsed-as-json",
+      "description": ".loganrc is read as JSON, never as YAML or INI",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          ".loganrc": "{\"level\":\"error\",\"format\":\"json\"}"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 3,
+          "format": "json"
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/file-package-json-logan-key",
+      "description": "package.json contributes only the contents of its logan key",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "package.json": "{\"name\":\"app\",\"version\":\"1.0.0\",\"logan\":{\"level\":\"debug\"}}"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 0
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/file-package-json-without-logan-key-is-absent",
+      "description": "A package.json with no logan key counts as absent and contributes nothing",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "note": "Silence is half the assertion. Reading the manifest as config rather than as a keyless candidate would drop name, version and scripts as unrecognized fields, and §6.5 requires each of those to warn.",
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "package.json": "{\"name\":\"app\",\"version\":\"1.0.0\",\"scripts\":{\"build\":\"tsc\"}}"
+        },
+        "config": {
+          "level": "error"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 3
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/file-first-present-wins",
+      "description": "logan.config.json wins over a .loganrc sitting beside it",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "logan.config.json": "{\"level\":\"error\"}",
+          ".loganrc": "{\"level\":\"debug\"}"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 3
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/file-loganrc-wins-over-package-json",
+      "description": ".loganrc is searched before package.json",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          ".loganrc": "{\"level\":\"warn\"}",
+          "package.json": "{\"name\":\"app\",\"logan\":{\"level\":\"debug\"}}"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 2
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/file-malformed-warns-and-stops",
+      "description": "An unparseable candidate warns naming the path and stops the search",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "note": "The .loganrc alongside it would give DEBUG. INFO — the library default — is what proves the search stopped rather than routing around the broken file.",
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "logan.config.json": "{ not json at all",
+          ".loganrc": "{\"level\":\"debug\"}"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 1
+        },
+        "diagnostics": [
+          "logan.config.json"
+        ]
+      }
+    },
+    {
+      "id": "config/file-not-an-object-is-malformed",
+      "description": "Valid JSON that is not an object is malformed, so it warns and stops",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          ".loganrc": "[\"level\",\"debug\"]",
+          "package.json": "{\"name\":\"app\",\"logan\":{\"level\":\"debug\"}}"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 1
+        },
+        "diagnostics": [
+          ".loganrc"
+        ]
+      }
+    },
+    {
+      "id": "config/file-level-string-normalized-to-ordinal",
+      "description": "A level written as a string in a config file is normalized to its ordinal",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "note": "The ordinal is the assertion. A string left unconverted makes every threshold comparison indeterminate rather than failing loudly, which is the failure §6.5 names.",
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "logan.config.json": "{\"level\":\"debug\"}"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 0
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/file-unknown-field-dropped-with-warning",
+      "description": "An unrecognized field is dropped with a warning naming the file and the field",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "logan.config.json": "{\"levl\":\"debug\"}"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 1
+        },
+        "diagnostics": [
+          "logan.config.json",
+          "levl"
+        ]
+      }
+    },
+    {
+      "id": "config/file-wrong-type-dropped-with-warning",
+      "description": "A recognized field of the wrong type is dropped with a warning",
+      "spec_ref": "§6.5",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "logan.config.json": "{\"level\":true}"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 1
+        },
+        "diagnostics": [
+          "logan.config.json",
+          "level"
+        ]
+      }
+    },
+    {
+      "id": "config/file-sits-below-explicit-config",
+      "description": "File contents enter as explicit config, below anything the caller passes alongside",
+      "spec_ref": "§6.2",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "logan.config.json": "{\"level\":\"debug\"}"
+        },
+        "config": {
+          "level": "error"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 3
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/file-sits-below-environment",
+      "description": "File contents are outranked by environment variables",
+      "spec_ref": "§6.2",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "logan.config.json": "{\"level\":\"debug\"}"
+        },
+        "env": {
+          "LOG_LEVEL": "error"
+        }
+      },
+      "expect": {
+        "config": {
+          "level": 3
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/file-metadata-merges-with-explicit",
+      "description": "metadata from a file merges shallowly under the caller's own metadata",
+      "spec_ref": "§6.2",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "logan.config.json": "{\"metadata\":{\"a\":1,\"b\":2}}"
+        },
+        "config": {
+          "metadata": {
+            "b": 3,
+            "c": 4
+          }
+        }
+      },
+      "expect": {
+        "config": {
+          "metadata": {
+            "a": 1,
+            "b": 3,
+            "c": 4
+          }
+        },
+        "diagnostics": []
+      }
+    }
+  ]
+}
