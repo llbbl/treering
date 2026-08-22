@@ -1,6 +1,6 @@
 # Open questions
 
-Each item is a place where the reference implementation (`logan-logger` v1.1.18) is
+Each item is a place where the reference implementation (`logan-logger` v2.0.2) is
 ambiguous, self-contradicting, or arguably wrong. The spec takes a position on each;
 these are the positions worth revisiting before 1.0.
 
@@ -11,8 +11,10 @@ true it is noted.
 
 ## OQ-1 — Repeated references reported as circular
 
-**Status:** resolved on the `logan-logger` 2.0 branch; fixture stays `pending`
-until 2.0.0 publishes.
+**Status:** resolved and shipped in `logan-logger` 2.0.0. The publish gate this was
+waiting on is met, so `serialization/repeated-not-circular` is ready to flip to
+`pending: false` — held only until the fixtures are actually executed against the
+implementation, which no test target does yet.
 
 `safeStringify` adds every visited object to a `WeakSet` that is never unwound:
 
@@ -32,15 +34,15 @@ way out.
 **Fixed in `logan-logger`** by
 [#57](https://github.com/llbbl/logan-logger-ts/issues/57): `safeStringify` now
 tracks only the current traversal path and unwinds on the way out, so `[Circular]`
-means an ancestor of itself. Landing in 2.0.0 because it changes output for
-existing users. Flip `serialization/repeated-not-circular` to active once 2.0.0
-is published.
+means an ancestor of itself. Shipped in 2.0.0, as a major because it changes output
+for existing users.
 
 ---
 
 ## OQ-2 — `.loganrc` is advertised but unreachable
 
-**Status:** implementation bug, spec is silent.
+**Status:** resolved. Discovery is now specified in SPEC §6.5, and the precedence
+question it blocked is settled in §6.2. Fixed in `logan-logger` 2.1.0 (llbbl/logan-logger-ts#58).
 
 `loadConfigFromFile` searches:
 
@@ -56,11 +58,34 @@ Worse, the loop returns on the **first** iteration regardless of outcome, becaus
 `logan.config.js`, `.loganrc`, and `package.json` are **never** consulted. Only
 `logan.config.json` is reachable, and only if it parses.
 
-**Decision needed:** support all four properly, or shrink the documented list to what
-actually works. The spec currently says nothing about config file discovery for exactly
-this reason.
+**Resolution:** support three of the four properly, and drop the fourth.
+`logan.config.json`, `.loganrc` and `package.json#logan` are searched in order via a
+candidate table rather than by extension sniffing, and the loader distinguishes
+absent / unreadable / malformed instead of collapsing all three into `{}`.
 
-**Requires a fix in `logan-logger`.**
+`logan.config.js` was **removed** rather than fixed. It was unreachable through the
+default search, so removing it from that path breaks nobody; an explicit
+`loadConfigFromFile('x.js')` did work, so this is a narrow real break, which is why the
+fix shipped as a minor rather than a patch. Nothing in §6.1 needs to be computed, so
+JSON covers the whole surface, and dropping it removed a code execution surface —
+a file discovered in the working directory being imported and evaluated during logger
+construction. §6.5 now forbids executable configuration for every implementation.
+
+Two things surfaced while fixing this that the original question did not anticipate:
+
+- **Normalization is mandatory, not cosmetic.** A config file naturally writes
+  `"level": "debug"`. Handed to the runtime unconverted, every `level >= threshold`
+  comparison is `NaN`, so the logger silently discards **every** record. The
+  reproduction in the original report — `{"logan":{"level":"debug"}}` — would have gone
+  from a silent no-op to a silent blackout had the chain been fixed on its own.
+- **The same defect exists one level down, inverted.** An unconverted per-transport
+  `level` (§7.3) makes that comparison `NaN` too, but there the failure is
+  `NaN → false → nothing is filtered`. A file transport configured
+  `{"type":"file","level":"error"}` to keep debug noise off disk receives every debug
+  record instead. Silent over-retention is worse than silent loss, and §6.5 now requires
+  the conversion at both levels.
+
+**Fixed in `logan-logger` 2.1.0.**
 
 ---
 
@@ -87,8 +112,10 @@ branch delegates to `serializeError`, which reads all own properties via
 
 ## OQ-4 — `timestamp` and `colorize` are declared but ignored
 
-**Status:** resolved on the `logan-logger` 2.0 branch; fixtures stay `pending`
-until 2.0.0 publishes.
+**Status:** resolved and shipped in `logan-logger` 2.0.0. The publish gate is met, so
+`envelope/timestamp-disabled` and `envelope/colorize-never-affects-json` are ready to
+flip to `pending: false` — held only until the fixtures are actually executed against
+the implementation, which no test target does yet.
 
 `LoggerConfig` declares both. `formatLogEntry(entry, format)` accepts neither, so:
 
@@ -106,33 +133,43 @@ Fixtures are marked `pending` until the implementation complies.
 [#60](https://github.com/llbbl/logan-logger-ts/issues/60): `formatLogEntry` takes a
 `FormatOptions` argument and the console transport passes the config through. Both
 options affect the text form only — the JSON envelope always carries a timestamp
-and is never colorized.
+and is never colorized. Shipped in 2.0.0.
 
 One thing the spec should probably say and currently does not: the implementation
 additionally gates `colorize` on stdout being a TTY, honoring `NO_COLOR` and
 `FORCE_COLOR`. Without that gate, honoring `colorize` starts writing ANSI escapes
-into every redirected log file. Worth a normative line in §6.4.
-
-Flip `envelope/timestamp-disabled` and `envelope/colorize-never-affects-json` to
-active once 2.0.0 is published.
+into every redirected log file. Worth a normative line in §6.4, and tracked as
+[treering#1](https://github.com/llbbl/treering/issues/1).
 
 ---
 
 ## OQ-5 — Strict boolean parsing for environment variables
 
-**Status:** spec enshrines current behavior, flags it.
+**Status:** resolved as option 2. SPEC §6.3 rewritten; the strict rule is withdrawn.
 
-`LOG_TIMESTAMP` and `LOG_COLOR` are true only when the value lowercased is exactly
-`true`. So `LOG_TIMESTAMP=1` silently disables timestamps, as does `yes`, `on`, and any
+`LOG_TIMESTAMP` and `LOG_COLOR` were true only when the value lowercased was exactly
+`true`. So `LOG_TIMESTAMP=1` silently disabled timestamps, as did `yes`, `on`, and any
 typo.
 
 **Options:**
-1. Keep strict (current, documented in §6.3)
+1. Keep strict (previously documented in §6.3)
 2. Accept `1`/`true`/`yes`/`on` as true, `0`/`false`/`no`/`off` as false, and treat
    anything else as unset rather than false
 
-Option 2 is friendlier and the failure mode of option 1 is silent. Leaning 2, but it is
-a behavior change.
+**Resolution:** option 2, plus a warning on an unrecognized value. Treating an
+unparseable value as unset rather than as `false` is the important half — it lets the
+precedence chain fall through to whatever configured the field below, instead of a typo
+silently overriding an explicit setting.
+
+Caught during the OQ-2 reconciliation pass: `logan-logger` **already shipped option 2**
+in 2.0.0, via [#65](https://github.com/llbbl/logan-logger-ts/issues/65), while §6.3
+still said implementations "MUST NOT broaden this without a spec revision". The
+reference implementation was in violation of its own spec for three releases. This is
+the spec revision.
+
+Worth noting for whoever writes the second implementation: the value of this question
+was never the truthy list, it was the third state. A two-valued parse has nowhere to put
+"I could not read this."
 
 ---
 
@@ -221,3 +258,29 @@ a synchronous console transport this is free. For buffered or async file transpo
 is a real constraint, and it interacts with flush-on-crash.
 
 Needs a position before anyone writes a batching transport.
+
+---
+
+## OQ-11 — `format: 'custom'` exists in the implementation but not the spec
+
+**Status:** spec is narrower than the reference implementation.
+
+SPEC §6.1 types `format` as `json | text`, and §6.3 accepts `LOG_FORMAT` only when it
+is exactly one of those. But `logan-logger`'s own `LoggerConfig['format']` is
+`'json' | 'text' | 'custom'`, and `'custom'` is threaded through `TransportContext`,
+`ConsoleTransportOptions` and `FileTransportOptions` — where it is currently treated as
+a synonym for `text`.
+
+Surfaced while fixing OQ-2: the config-file loader rejected `'custom'` while
+`createLogger({ format: 'custom' })` accepted it, so the same value was legal through
+one door and not the other. The loader was made consistent with the library, which
+leaves the spec as the odd one out.
+
+**Decision needed:** either define what `custom` *means* — it currently has no behavior
+of its own, which is a poor thing to put in a cross-implementation spec — or remove it
+from `LoggerConfig` and let a custom transport own its formatting. The second is more
+appealing: a transport already receives the whole record and can format it however it
+likes, so a `format` value that means "some transport will decide" is redundant with
+the transport list.
+
+**Requires a decision before any second implementation.**

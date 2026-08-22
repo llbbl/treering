@@ -1,7 +1,8 @@
 # Treering Specification
 
 **Version:** 0.1.0-draft
-**Status:** Draft. Extracted from `logan-logger` (TypeScript) at v1.1.18.
+**Status:** Draft. Extracted from `logan-logger` (TypeScript) at v1.1.18, revised
+against 2.0.2 and the 2.1.0 configuration work.
 
 Treering specifies the observable behavior of a structured logging library, so that
 independent implementations in different languages emit identical output for identical
@@ -198,10 +199,10 @@ a diamond or DAG — **MUST** serialize that value in full at each occurrence.
 `"[Circular]"` is reserved for genuine cycles, meaning the value is an ancestor of
 itself on the current path.
 
-> The reference implementation fails this: it marks every visited object in a set that
-> is never unwound, so sibling references to one object emit `"[Circular]"` for the
-> second occurrence. This spec deliberately does **not** enshrine that. Correct
-> implementations track the **current path**, not all visited values.
+> The reference implementation failed this until 2.0.0: it marked every visited object
+> in a set that was never unwound, so sibling references to one object emitted
+> `"[Circular]"` for the second occurrence. This spec deliberately did **not** enshrine
+> that. Correct implementations track the **current path**, not all visited values.
 
 ### 4.2 Errors
 
@@ -217,9 +218,10 @@ omitted rather than null.
 Custom properties attached to the error **MUST** be included, excluding any that would
 duplicate `name`, `message`, or `stack`.
 
-> The reference implementation has two error serializers that disagree: one enumerates
-> all own property names, the other spreads only enumerable ones. The rule above —
-> all own properties — is the normative one. See OQ-3.
+> The reference implementation used to carry two error serializers that disagreed: one
+> enumerated all own property names, the other spread only enumerable ones. The rule
+> above — all own properties — is the normative one, and 1.1.21 converged on it.
+> See OQ-3.
 
 ### 4.3 Determinism
 
@@ -256,13 +258,32 @@ Implementations in languages without closures-as-values **MAY** omit this featur
 | `metadata` | map | `{}` |
 | `transports` | list of transport configs | one console transport |
 
+`logan-logger` additionally accepts `format: 'custom'`, which this table does not
+sanction because the value has no defined behavior — it is currently a synonym for
+`text`. See OQ-11; it should be given meaning or removed, not left ambiguous.
+
 ### 6.2 Precedence
 
 Later sources override earlier ones:
 
 ```
-library defaults  <  config file  <  explicit config  <  environment variables
+library defaults  <  explicit config  <  environment variables
 ```
+
+Configuration files are deliberately **not** a tier of their own. Discovery is I/O,
+so a synchronous constructor cannot perform it, and the reference implementation
+keeps `createLogger()` synchronous. File contents therefore enter as *explicit
+config*, supplied by the caller:
+
+```typescript
+const logger = createLogger(await loadConfigFromFile());
+```
+
+Placed there they sit below anything the caller passes alongside them, and below the
+environment — the ordering earlier drafts of this section ascribed to a dedicated
+tier. An implementation whose constructor is already asynchronous **MAY** insert file
+config as its own tier immediately above library defaults; one whose constructor is
+synchronous **MUST NOT** claim that tier exists. See §6.5. (OQ-2)
 
 Merge rules per field:
 
@@ -276,24 +297,91 @@ Merge rules per field:
 |---|---|
 | `LOG_LEVEL` | parsed per §1.3 |
 | `LOG_FORMAT` | accepted only if exactly `json` or `text`; otherwise ignored |
-| `LOG_TIMESTAMP` | `true` if the value lowercased equals `true`, else `false` |
-| `LOG_COLOR` | `true` if the value lowercased equals `true`, else `false` |
+| `LOG_TIMESTAMP` | parsed as a boolean, below |
+| `LOG_COLOR` | parsed as a boolean, below |
 
-The boolean rule is deliberately strict: `1`, `yes`, and `on` all resolve to **false**.
-Implementations **MUST NOT** broaden this without a spec revision.
+Booleans accept, case-insensitively and after trimming surrounding whitespace:
 
-> OQ-5 proposes broadening it, since `LOG_TIMESTAMP=1` silently disabling timestamps is
-> a poor experience.
+| Value | Result |
+|---|---|
+| `true`, `1`, `yes`, `on` | true |
+| `false`, `0`, `no`, `off` | false |
+| anything else | **unset** — warn once, fall through to the next source |
 
-### 6.4 `timestamp` and `colorize` are currently unenforced
+An unrecognized value **MUST NOT** be treated as `false`. The variable is ignored, so
+the precedence chain in §6.2 continues to whatever set the field below it, and the
+implementation **MUST** warn — once per distinct message, not once per logger
+constructed.
 
-The reference implementation declares both but its formatter ignores them: timestamps
-are always emitted and color is never applied by the shared formatter.
+This revises OQ-5, which is now resolved. Earlier revisions required the strict rule
+(true only when the value lowercased is exactly `true`), which made `LOG_TIMESTAMP=1`
+silently *disable* timestamps — the value most likely to be intended as "on" was one of
+the many that meant "off". That rule is withdrawn; implementations **MUST NOT** apply
+it.
 
-This spec declares the intended behavior — `timestamp: false` **MUST** omit the
-timestamp from the text form, and `colorize` **MUST** control ANSI coloring of the
-level token in the text form only, never the JSON form. Fixtures for these are marked
-pending until the reference implementation complies. See OQ-4.
+### 6.4 `timestamp` and `colorize`
+
+`timestamp: false` **MUST** omit the timestamp from the text form, and `colorize`
+**MUST** control ANSI coloring of the level token in the text form only, never the JSON
+form. The JSON envelope always carries a timestamp and is never colorized.
+
+Earlier revisions marked both as declared-but-ignored by the reference implementation.
+That is no longer true — `logan-logger` 2.0.0 honors both. See OQ-4.
+
+`colorize` alone is not sufficient to decide whether to emit ANSI. An implementation
+that writes escapes into a redirected stream corrupts every log file it touches. The
+reference implementation additionally requires stdout to be a TTY and honors `NO_COLOR`
+and `FORCE_COLOR`; this spec does not yet require that, which is a gap, not an
+endorsement of the alternative. Tracked as treering#1.
+
+### 6.5 Configuration files
+
+Earlier revisions declined to specify discovery at all, pending OQ-2. It is now
+settled.
+
+An implementation that offers file-based configuration **MUST** search these
+candidates, in this order, and use the first one present:
+
+| Candidate | Read from |
+|---|---|
+| `logan.config.json` | the whole file |
+| `.loganrc` | the whole file |
+| `package.json` | the `logan` key |
+
+All three are **JSON**. `.loganrc` is conventionally JSON in most ecosystems but not
+universally; implementations **MUST NOT** accept YAML or INI without a spec revision.
+
+Rules:
+
+- Candidates are resolved against a caller-supplied base directory, defaulting to the
+  process working directory. Implementations **SHOULD** accept an explicit base
+  directory, because the working directory is not the package root under process
+  managers or in a monorepo.
+- A `package.json` with no `logan` key counts as **absent**, so the search continues.
+  Returning an empty config here would stop the search and mask a later candidate.
+- **Absent** means continue. **Malformed** — unparseable, or not a JSON object — means
+  warn naming the path and stop; a broken config file is a mistake to surface, not to
+  route around. An implementation **MUST NOT** silently fall back to defaults.
+- These are distinct states. An I/O failure on a path that exists is not absence.
+  A path that cannot be a config file at all (it is a directory, or a path component
+  is not a directory) **MUST** be treated as absent and the search continued; a file
+  that exists but cannot be *read* — permissions, sandbox denial — **MUST** warn.
+- When the caller names a path explicitly, absent and malformed are both **errors**.
+  Asking for a specific file that is not there is a caller mistake. The one exception
+  is a sandboxed runtime that denies filesystem access wholesale: that **MUST NOT**
+  throw, because it is a property of the host, not of the configuration.
+- Implementations **MUST NOT** load executable configuration (`.js`, `.ts`, or any
+  form requiring evaluation). Nothing in §6.1 needs to be computed, and executing a
+  file discovered in the working directory during logger construction is a code
+  execution surface with no offsetting benefit.
+
+Values are **normalized on load**, not passed through raw. A config file naturally
+writes `"level": "debug"`, a string, where §1.1 requires an ordinal. Implementations
+**MUST** parse it per §1.3, and **MUST** apply the same conversion to a per-transport
+`level` (§7.3) — an unconverted string there makes the transport comparison
+indeterminate, which in the reference implementation caused the transport threshold to
+be ignored entirely rather than to fail loudly. A field that is unrecognized, or of the
+wrong type, **MUST** be dropped with a warning naming the file and the field.
 
 ---
 
@@ -372,7 +460,11 @@ Extracted from `logan-logger` v1.1.18, specifically:
 - `src/utils/formatting.ts` — JSON and text forms
 - `src/utils/serialization.ts` — value substitution, error handling, redaction
 - `src/utils/config.ts` — defaults, environment variables, merge rules
+- `src/utils/config-file.ts` — config file discovery and normalization (added for §6.5)
 
 Where the implementation is self-contradicting or clearly wrong, this document
 specifies the intended behavior and records the divergence in `OPEN-QUESTIONS.md`
 rather than enshrining the bug.
+
+Sections 6.2 through 6.5 were revised against 2.0.2 and the 2.1.0 configuration work,
+which resolved OQ-2 and OQ-5.
