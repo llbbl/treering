@@ -322,6 +322,52 @@
         "json": "{\"a\":1,\"b\":2,\"password\":\"p\"}"
       },
       "note": "The dangerous case. 'Every token of the key appears among the field tokens' is vacuously true for a key with no tokens, so an unguarded implementation redacts the entire object. password is untouched because a supplied key set replaces the defaults."
+    },
+    {
+      "id": "redaction/preserves-cycles",
+      "description": "A cyclic input does not raise; the cycle survives into the copy and the serializer renders it",
+      "spec_ref": "§8.4",
+      "pending": false,
+      "input": {
+        "value": {
+          "$id": "root",
+          "value": {
+            "name": "x",
+            "password": "hunter2",
+            "self": {
+              "$ref": "root"
+            }
+          }
+        }
+      },
+      "expect": {
+        "json": "{\"name\":\"x\",\"password\":\"[REDACTED]\",\"self\":\"[Circular]\"}"
+      },
+      "note": "The [Circular] marker comes from §4.1 at serialization time, not from redaction. An implementation that substitutes it during redaction passes this case but violates §8.4 — the difference is not observable here, which is why §8.4 states the requirement in prose."
+    },
+    {
+      "id": "redaction/repeated-references",
+      "description": "The same object in two fields is redacted in both and serializes in full both times",
+      "spec_ref": "§8.4",
+      "pending": false,
+      "input": {
+        "value": {
+          "a": {
+            "$id": "shared",
+            "value": {
+              "id": 1,
+              "token": "t"
+            }
+          },
+          "b": {
+            "$ref": "shared"
+          }
+        }
+      },
+      "expect": {
+        "json": "{\"a\":{\"id\":1,\"token\":\"[REDACTED]\"},\"b\":{\"id\":1,\"token\":\"[REDACTED]\"}}"
+      },
+      "note": "A DAG, not a cycle. §4.1 requires both occurrences in full. Also checks redaction reaches through a shared reference rather than redacting only the first occurrence."
     }
   ]
 }
