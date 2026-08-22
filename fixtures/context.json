@@ -1,0 +1,153 @@
+{
+  "suite": "context",
+  "spec": "0.1.0-draft",
+  "cases": [
+    {
+      "id": "context/child-adds-metadata",
+      "description": "A child logger's context appears on every record it emits",
+      "spec_ref": "§3.1",
+      "pending": false,
+      "input": {
+        "timestamp": "2026-08-22T04:15:30.123Z",
+        "runtime": "node",
+        "children": [{ "requestId": "req-123" }],
+        "level": "info",
+        "message": "handling",
+        "format": "json"
+      },
+      "expect": {
+        "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"info\",\"message\":\"handling\",\"runtime\":\"node\",\"metadata\":{\"requestId\":\"req-123\"}}"
+      }
+    },
+    {
+      "id": "context/nested-children-accumulate",
+      "description": "Nested children accumulate context left to right",
+      "spec_ref": "§3.1",
+      "pending": false,
+      "input": {
+        "timestamp": "2026-08-22T04:15:30.123Z",
+        "runtime": "node",
+        "children": [{ "service": "api" }, { "requestId": "req-1" }, { "userId": 9 }],
+        "level": "info",
+        "message": "ok",
+        "format": "json"
+      },
+      "expect": {
+        "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"info\",\"message\":\"ok\",\"runtime\":\"node\",\"metadata\":{\"service\":\"api\",\"requestId\":\"req-1\",\"userId\":9}}"
+      }
+    },
+    {
+      "id": "context/child-overrides-parent",
+      "description": "A child key with the same name replaces the parent's",
+      "spec_ref": "§3.1",
+      "pending": false,
+      "input": {
+        "timestamp": "2026-08-22T04:15:30.123Z",
+        "runtime": "node",
+        "children": [{ "scope": "outer" }, { "scope": "inner" }],
+        "level": "info",
+        "message": "ok",
+        "format": "json"
+      },
+      "expect": {
+        "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"info\",\"message\":\"ok\",\"runtime\":\"node\",\"metadata\":{\"scope\":\"inner\"}}"
+      }
+    },
+    {
+      "id": "context/call-site-wins",
+      "description": "Metadata passed at the call site overrides the logger's context",
+      "spec_ref": "§3.2",
+      "pending": false,
+      "input": {
+        "timestamp": "2026-08-22T04:15:30.123Z",
+        "runtime": "node",
+        "children": [{ "requestId": "req-1", "stage": "start" }],
+        "level": "info",
+        "message": "done",
+        "metadata": { "stage": "finish" },
+        "format": "json"
+      },
+      "expect": {
+        "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"info\",\"message\":\"done\",\"runtime\":\"node\",\"metadata\":{\"requestId\":\"req-1\",\"stage\":\"finish\"}}"
+      }
+    },
+    {
+      "id": "context/merge-is-shallow",
+      "description": "Nested objects are replaced wholesale, not merged recursively",
+      "spec_ref": "§3.1",
+      "pending": false,
+      "input": {
+        "timestamp": "2026-08-22T04:15:30.123Z",
+        "runtime": "node",
+        "children": [{ "ctx": { "a": 1, "b": 2 } }, { "ctx": { "b": 3 } }],
+        "level": "info",
+        "message": "ok",
+        "format": "json"
+      },
+      "expect": {
+        "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"info\",\"message\":\"ok\",\"runtime\":\"node\",\"metadata\":{\"ctx\":{\"b\":3}}}"
+      }
+    },
+    {
+      "id": "context/parent-not-mutated",
+      "description": "Creating a child leaves the parent's context untouched",
+      "spec_ref": "§3.1",
+      "pending": false,
+      "input": {
+        "timestamp": "2026-08-22T04:15:30.123Z",
+        "runtime": "node",
+        "children": [{ "a": 1 }],
+        "then_emit_from": "parent",
+        "level": "info",
+        "message": "parent speaks",
+        "format": "json"
+      },
+      "expect": {
+        "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"info\",\"message\":\"parent speaks\",\"runtime\":\"node\"}",
+        "omits": ["metadata"]
+      }
+    },
+    {
+      "id": "context/child-opens-no-resources",
+      "description": "Creating a child must not construct new transports or open new handles",
+      "spec_ref": "§3.3",
+      "pending": false,
+      "input": {
+        "transports": [{ "type": "file", "options": { "filename": "out.log" } }],
+        "children": [{ "a": 1 }, { "b": 2 }, { "c": 3 }],
+        "assert": "resource_count"
+      },
+      "expect": { "transport_instances": 1, "open_handles": 1 }
+    },
+    {
+      "id": "context/lazy-not-invoked-when-filtered",
+      "description": "A lazy message is not evaluated when the record is filtered out",
+      "spec_ref": "§5",
+      "pending": false,
+      "input": {
+        "threshold": "info",
+        "level": "debug",
+        "message": { "$lazy": "expensive" }
+      },
+      "expect": { "emitted": [], "calls": { "lazy_invoked": false } }
+    },
+    {
+      "id": "context/lazy-invoked-when-emitted",
+      "description": "A lazy message is evaluated exactly once when the record passes the filter",
+      "spec_ref": "§5",
+      "pending": false,
+      "input": {
+        "timestamp": "2026-08-22T04:15:30.123Z",
+        "runtime": "node",
+        "threshold": "info",
+        "level": "warn",
+        "message": { "$lazy": "computed" },
+        "format": "json"
+      },
+      "expect": {
+        "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"warn\",\"message\":\"computed\",\"runtime\":\"node\"}",
+        "calls": { "lazy_invoked": true, "lazy_invoke_count": 1 }
+      }
+    }
+  ]
+}

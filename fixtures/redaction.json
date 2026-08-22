@@ -1,0 +1,100 @@
+{
+  "suite": "redaction",
+  "spec": "0.1.0-draft",
+  "cases": [
+    {
+      "id": "redaction/defaults",
+      "description": "Default key set redacts password, token, secret, key and auth",
+      "spec_ref": "§8",
+      "pending": false,
+      "input": {
+        "value": {
+          "username": "john",
+          "password": "hunter2",
+          "token": "abc",
+          "secret": "s",
+          "key": "k",
+          "auth": "bearer x"
+        }
+      },
+      "expect": {
+        "json": "{\"username\":\"john\",\"password\":\"[REDACTED]\",\"token\":\"[REDACTED]\",\"secret\":\"[REDACTED]\",\"key\":\"[REDACTED]\",\"auth\":\"[REDACTED]\"}"
+      }
+    },
+    {
+      "id": "redaction/case-insensitive",
+      "description": "Field name matching ignores case",
+      "spec_ref": "§8",
+      "pending": false,
+      "input": { "value": { "Password": "x", "API_TOKEN": "y", "Authorization": "z" } },
+      "expect": {
+        "json": "{\"Password\":\"[REDACTED]\",\"API_TOKEN\":\"[REDACTED]\",\"Authorization\":\"[REDACTED]\"}"
+      }
+    },
+    {
+      "id": "redaction/substring-overmatch",
+      "description": "Substring matching redacts fields that merely contain a sensitive word; this is current behavior, not desired behavior",
+      "spec_ref": "§8",
+      "pending": false,
+      "input": { "value": { "monkey": "george", "keyboard": "qwerty", "tokenizer": "bpe" } },
+      "expect": {
+        "json": "{\"monkey\":\"[REDACTED]\",\"keyboard\":\"[REDACTED]\",\"tokenizer\":\"[REDACTED]\"}"
+      },
+      "note": "OQ-6 proposes word-boundary matching, which would flip all three to unredacted."
+    },
+    {
+      "id": "redaction/recurses",
+      "description": "Redaction descends into nested maps",
+      "spec_ref": "§8",
+      "pending": false,
+      "input": {
+        "value": { "user": { "name": "j", "credentials": { "password": "p", "id": 1 } } }
+      },
+      "expect": {
+        "json": "{\"user\":{\"name\":\"j\",\"credentials\":{\"password\":\"[REDACTED]\",\"id\":1}}}"
+      }
+    },
+    {
+      "id": "redaction/preserves-lists",
+      "description": "Lists stay lists and their elements are still processed",
+      "spec_ref": "§8",
+      "pending": false,
+      "input": { "value": { "items": [{ "token": "a" }, { "safe": "b" }] } },
+      "expect": { "json": "{\"items\":[{\"token\":\"[REDACTED]\"},{\"safe\":\"b\"}]}" }
+    },
+    {
+      "id": "redaction/custom-keys-replace-defaults",
+      "description": "Supplying a key set replaces the defaults rather than extending them",
+      "spec_ref": "§8",
+      "pending": false,
+      "input": { "value": { "password": "p", "ssn": "123" }, "keys": ["ssn"] },
+      "expect": { "json": "{\"password\":\"p\",\"ssn\":\"[REDACTED]\"}" }
+    },
+    {
+      "id": "redaction/scalars-pass-through",
+      "description": "A non-container input is returned unchanged",
+      "spec_ref": "§8",
+      "pending": false,
+      "input": { "value": "just a string" },
+      "expect": { "json": "\"just a string\"" }
+    },
+    {
+      "id": "redaction/not-automatic",
+      "description": "The logger must not redact unless the caller explicitly does so",
+      "spec_ref": "§8",
+      "pending": false,
+      "input": {
+        "timestamp": "2026-08-22T04:15:30.123Z",
+        "runtime": "node",
+        "level": "info",
+        "message": "login",
+        "metadata": { "password": "hunter2" },
+        "format": "json",
+        "assert": "no_implicit_redaction"
+      },
+      "expect": {
+        "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"info\",\"message\":\"login\",\"runtime\":\"node\",\"metadata\":{\"password\":\"hunter2\"}}"
+      }
+    }
+  ]
+}

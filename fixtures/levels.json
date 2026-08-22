@@ -1,0 +1,88 @@
+{
+  "suite": "levels",
+  "spec": "0.1.0-draft",
+  "cases": [
+    {
+      "id": "levels/ordinals",
+      "description": "Ordinals are fixed and ascend by severity",
+      "spec_ref": "§1.1",
+      "pending": false,
+      "input": { "assert": "ordinals" },
+      "expect": {
+        "ordinals": { "debug": 0, "info": 1, "warn": 2, "error": 3, "silent": 4 }
+      }
+    },
+    {
+      "id": "levels/filter-at-info",
+      "description": "A threshold of INFO drops DEBUG and admits the rest",
+      "spec_ref": "§1.2",
+      "pending": false,
+      "input": { "threshold": "info", "emit": ["debug", "info", "warn", "error"] },
+      "expect": { "emitted": ["info", "warn", "error"] }
+    },
+    {
+      "id": "levels/filter-at-debug",
+      "description": "A threshold of DEBUG admits everything",
+      "spec_ref": "§1.2",
+      "pending": false,
+      "input": { "threshold": "debug", "emit": ["debug", "info", "warn", "error"] },
+      "expect": { "emitted": ["debug", "info", "warn", "error"] }
+    },
+    {
+      "id": "levels/filter-at-error",
+      "description": "A threshold of ERROR admits only ERROR",
+      "spec_ref": "§1.2",
+      "pending": false,
+      "input": { "threshold": "error", "emit": ["debug", "info", "warn", "error"] },
+      "expect": { "emitted": ["error"] }
+    },
+    {
+      "id": "levels/silent-suppresses-all",
+      "description": "A threshold of SILENT suppresses every record including ERROR",
+      "spec_ref": "§1.2",
+      "pending": false,
+      "input": { "threshold": "silent", "emit": ["debug", "info", "warn", "error"] },
+      "expect": { "emitted": [] }
+    },
+    {
+      "id": "levels/parse-canonical",
+      "description": "Canonical strings parse to their level",
+      "spec_ref": "§1.3",
+      "pending": false,
+      "input": { "parse": ["debug", "info", "warn", "error", "silent"] },
+      "expect": { "parsed": ["debug", "info", "warn", "error", "silent"] }
+    },
+    {
+      "id": "levels/parse-case-insensitive",
+      "description": "Parsing ignores case",
+      "spec_ref": "§1.3",
+      "pending": false,
+      "input": { "parse": ["DEBUG", "Info", "WaRn", "ERROR"] },
+      "expect": { "parsed": ["debug", "info", "warn", "error"] }
+    },
+    {
+      "id": "levels/parse-aliases",
+      "description": "warning aliases to warn, none aliases to silent",
+      "spec_ref": "§1.3",
+      "pending": false,
+      "input": { "parse": ["warning", "none"] },
+      "expect": { "parsed": ["warn", "silent"] }
+    },
+    {
+      "id": "levels/parse-unknown-defaults-to-info",
+      "description": "An unrecognized level string resolves to INFO and must not raise",
+      "spec_ref": "§1.3",
+      "pending": false,
+      "input": { "parse": ["verbose", "trace", "", "critical", "12"] },
+      "expect": { "parsed": ["info", "info", "info", "info", "info"], "raised": false }
+    },
+    {
+      "id": "levels/no-silent-emit-method",
+      "description": "SILENT is threshold-only and must not be emittable",
+      "spec_ref": "§1.2",
+      "pending": false,
+      "input": { "assert": "no_silent_emit" },
+      "expect": { "has_silent_emit_method": false }
+    }
+  ]
+}
