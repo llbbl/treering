@@ -453,10 +453,39 @@ Then lowercase every token and discard empty ones. This yields the same tokens f
 implementation **MUST** treat snake_case, camelCase, kebab-case, PascalCase and
 SCREAMING_SNAKE identically.
 
-**Matching.** A token matches a key when it equals the key, or equals the key followed
-by `s`. Both comparisons are on lowercased values. The plural rule is what makes
-`tokens` and `apiKeys` redact, and it applies to caller-supplied keys too, so a caller
-passing `ssn` also covers `ssns`.
+**Matching.** Keys are tokenized by the same rule as field names — this is not
+optional, see below. A field is redacted when, for some key:
+
+- every token of the key appears among the field's tokens, **or**
+- the field's tokens joined together equal the key's tokens joined together
+
+with, in both comparisons, a **field** token also matching a key token followed by `s`.
+All comparisons are on lowercased values.
+
+**The plural rule is one-way**: a field token may be the plural of a key token, never
+the reverse. Key `ssn` reaches field `ssns`; key `ssns` does **not** reach field `ssn`.
+Keys are written in the singular by convention, and leaving the direction unstated would
+let two conforming implementations disagree on a case no fixture pins down.
+
+The joined comparison is what lets `apiKey` as a key reach a field spelled `apikey`, and
+`apikey` as a key reach a field spelled `api_key`.
+
+**A key with zero tokens matches nothing.** An implementation **MUST** discard keys that
+tokenize to nothing — `""`, `"---"`, `"   "` — before matching. This is not a tidiness
+rule: "every token of the key appears" is *vacuously true* for a key with no tokens, so
+an unguarded implementation redacts every field in the object. An empty string reaching
+the key set from configuration or a trailing comma is not unusual, and the failure is
+total.
+
+For a single-token key this reduces to "some field token equals the key", which is the
+common case and the one every default key exercises.
+
+**Tokenizing the key side is required, not cosmetic.** An implementation that compares
+the key raw against each field token silently breaks every multi-token key: a caller
+passing `creditCard` gets nothing, because the field's tokens are `credit` and `card`
+and neither equals `creditcard`. It fails closed with no error, and it fails only for
+callers who supplied their own keys — precisely the callers who thought about this most.
+An implementation **MUST NOT** compare an untokenized key against a tokenized field.
 
 ### 8.2 Why the default key set carries joined spellings
 
@@ -474,6 +503,13 @@ this list.
 
 The list is not exhaustive and cannot be. A field named `mytoken` is a single token and
 is not redacted; callers with house naming conventions **SHOULD** pass their own keys.
+
+One consequence of the joined comparison in §8.1 is worth stating so it is not mistaken
+for a bug: a field whose tokens *join* to a key is redacted even when no single token
+matches, so `to_ken` is redacted by the key `token`. Substring matching did not catch
+that. It is coverage growing rather than shrinking, which §8.2 permits, and no realistic
+field name was found that trips it — but it follows from the rule and implementations
+**MUST NOT** special-case it away.
 
 ### 8.3 Application
 

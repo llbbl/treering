@@ -240,6 +240,88 @@
         "json": "{\"ssn\":\"[REDACTED]\",\"ssns\":\"[REDACTED]\",\"password\":\"p\"}"
       },
       "note": "password is untouched because a supplied key set replaces the defaults."
+    },
+    {
+      "id": "redaction/multi-token-custom-keys",
+      "description": "A caller-supplied key is tokenized like a field name, so multi-token keys work in every casing",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "creditCard": "4111",
+          "credit_card": "4222",
+          "CREDIT-CARD": "4333",
+          "cardHolder": "j",
+          "monkey": "g"
+        },
+        "keys": [
+          "creditCard"
+        ]
+      },
+      "expect": {
+        "json": "{\"creditCard\":\"[REDACTED]\",\"credit_card\":\"[REDACTED]\",\"CREDIT-CARD\":\"[REDACTED]\",\"cardHolder\":\"j\",\"monkey\":\"g\"}"
+      },
+      "note": "An implementation that compares the key raw against field tokens redacts NONE of these: the field tokens are credit|card and neither equals 'creditcard'. It fails closed and silently, and only for callers who supplied their own keys. cardHolder is left alone because only one of the key's two tokens is present."
+    },
+    {
+      "id": "redaction/plural-direction-is-one-way",
+      "description": "A field token may be the plural of a key token, never the reverse",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "ssn": "a",
+          "ssns": "b"
+        },
+        "keys": [
+          "ssn"
+        ]
+      },
+      "expect": {
+        "json": "{\"ssn\":\"[REDACTED]\",\"ssns\":\"[REDACTED]\"}"
+      },
+      "note": "Paired with redaction/plural-direction-reverse. Nothing in the rule text forces a direction on its own, so both directions are pinned by fixture."
+    },
+    {
+      "id": "redaction/plural-direction-reverse",
+      "description": "A plural key does not reach a singular field",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "ssn": "a",
+          "ssns": "b"
+        },
+        "keys": [
+          "ssns"
+        ]
+      },
+      "expect": {
+        "json": "{\"ssn\":\"a\",\"ssns\":\"[REDACTED]\"}"
+      },
+      "note": "Keys are written singular by convention. Without this case two conforming implementations could disagree here."
+    },
+    {
+      "id": "redaction/empty-keys-match-nothing",
+      "description": "Keys that tokenize to nothing are discarded and match no field",
+      "spec_ref": "§8.1",
+      "pending": false,
+      "input": {
+        "value": {
+          "a": 1,
+          "b": 2,
+          "password": "p"
+        },
+        "keys": [
+          "",
+          "---",
+          "   "
+        ]
+      },
+      "expect": {
+        "json": "{\"a\":1,\"b\":2,\"password\":\"p\"}"
+      },
+      "note": "The dangerous case. 'Every token of the key appears among the field tokens' is vacuously true for a key with no tokens, so an unguarded implementation redacts the entire object. password is untouched because a supplied key set replaces the defaults."
     }
   ]
 }

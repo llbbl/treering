@@ -226,9 +226,26 @@ Measured on 46 credential-shaped names and 20 innocent ones: **zero coverage los
 uncovered and is documented as such — it is a single token, and only a caller-supplied
 key can reach it.
 
+**A second correction, found while implementing.** The first draft of §8.1 tokenized the
+field name but compared each key **raw**. That silently breaks every multi-token key: a
+caller passing `creditCard` redacts nothing, because the field's tokens are `credit` and
+`card` and neither equals `creditcard`. Measured against the old substring rule, keys
+like `apiKey`, `creditCard`, `customSecret` and `userPassword` all went dead.
+
+This was worse than the first problem it was meant to solve. It fails closed, silently,
+and only for callers who supplied their own key set — the callers who thought hardest
+about redaction. It surfaced because two existing `logan-logger` tests passed camelCase
+keys and started failing.
+
+§8.1 now tokenizes both sides and matches when every key token is present among the
+field tokens, or the two joined forms are equal. For a single-token key that reduces to
+the original rule, so no fixture changed. It also makes `apiKey` as a supplied key reach
+`api_key` and `x-auth-token`, which is what a caller would assume it already did.
+
 The general lesson is worth keeping for other redaction questions: for this utility a
 false positive is visible and a false negative is invisible, so any change **MUST** be
-evaluated for coverage lost before it is evaluated for elegance.
+evaluated for coverage lost before it is evaluated for elegance. Both corrections here
+were coverage losses hiding inside a cleaner-looking rule.
 
 ---
 
