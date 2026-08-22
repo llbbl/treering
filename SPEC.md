@@ -421,14 +421,61 @@ passes both the logger threshold and the transport threshold.
 `redact(value, keys)` returns a copy with matching values replaced by the literal
 string `"[REDACTED]"`.
 
-Default key set: `password`, `token`, `secret`, `key`, `auth`.
+Default key set:
 
-Matching is case-insensitive **substring** matching against the field name.
+```
+password  token  secret  key  auth
+authorization  apikey  authtoken  accesstoken  secretkey
+```
 
-> This over-matches by design in the reference implementation: a field named `monkey`
-> contains `key` and is redacted. OQ-6 proposes exact-match-or-word-boundary instead.
-> Until resolved, implementations **MUST** reproduce substring matching so fixtures
-> agree.
+Supplying a key set **replaces** the defaults; it does not extend them.
+
+### 8.1 Field name matching
+
+A field is redacted when **any token of its name** matches a key. Matching is on whole
+tokens, never on substrings, so `api_key` is redacted and `monkey` is not.
+
+Earlier revisions specified case-insensitive substring matching and required
+implementations to reproduce it. That rule is withdrawn (OQ-6).
+
+**Tokenization.** Split the field name at every one of these boundaries, in any order —
+the result is the same:
+
+1. Between a lowercase letter or digit and an uppercase letter — `apiKey` → `api`, `Key`
+2. Between an uppercase run and an uppercase letter followed by a lowercase letter —
+   `APIKey` → `API`, `Key`
+3. Between a letter and a digit, in either direction — `key1` → `key`, `1`
+4. At every run of characters that are not ASCII letters or digits — `api_key`,
+   `api-key`, `api.key` all → `api`, `key`
+
+Then lowercase every token and discard empty ones. This yields the same tokens for
+`api_key`, `apiKey`, `API-KEY`, `API_KEY` and `ApiKey`, which is the point: an
+implementation **MUST** treat snake_case, camelCase, kebab-case, PascalCase and
+SCREAMING_SNAKE identically.
+
+**Matching.** A token matches a key when it equals the key, or equals the key followed
+by `s`. Both comparisons are on lowercased values. The plural rule is what makes
+`tokens` and `apiKeys` redact, and it applies to caller-supplied keys too, so a caller
+passing `ssn` also covers `ssns`.
+
+### 8.2 Why the default key set carries joined spellings
+
+`apikey` and `monkey` are the same shape: one all-lowercase token ending in `key`. No
+tokenization can separate them, so a rule alone cannot redact one and spare the other.
+The joined spellings — `authorization`, `apikey`, `authtoken`, `accesstoken`,
+`secretkey` — are therefore listed explicitly.
+
+Without them, moving from substring to token matching would **stop** redacting
+`authorization`, `apikey`, `accesstoken` and `secretkey`, all of which the previous rule
+caught. A redaction utility that sheds coverage on upgrade is worse than one that
+over-matches: a spurious `[REDACTED]` is visible and annoying, a missing one is a leaked
+credential nobody sees. Implementations **MUST NOT** narrow the default key set below
+this list.
+
+The list is not exhaustive and cannot be. A field named `mytoken` is a single token and
+is not redacted; callers with house naming conventions **SHOULD** pass their own keys.
+
+### 8.3 Application
 
 Redaction is **not** applied automatically. It is an explicit utility the caller
 invokes. An implementation **MUST NOT** redact by default, because silently altering

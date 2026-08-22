@@ -175,10 +175,10 @@ was never the truthy list, it was the third state. A two-valued parse has nowher
 
 ## OQ-6 — Redaction over-matches
 
-**Status:** spec enshrines current behavior, flags it.
+**Status:** resolved as option 3, with a correction. SPEC §8 rewritten.
 
-Matching is `field.toLowerCase().includes(sensitive.toLowerCase())`, so with the default
-key set:
+Matching was `field.toLowerCase().includes(sensitive.toLowerCase())`, so with the old
+default key set:
 
 | Field | Redacted? | Intended? |
 |---|---|---|
@@ -197,6 +197,38 @@ key set:
 Option 3 is probably right but needs a defined word-splitting rule that works for
 `snake_case`, `camelCase`, `kebab-case`, and `PascalCase` identically across languages.
 That rule has to be specified precisely or implementations will diverge.
+
+**Resolution:** option 3, with a correction the question did not anticipate. The
+tokenization rule is now SPEC §8.1, covering camelCase, PascalCase, SCREAMING_SNAKE,
+every non-alphanumeric separator, and letter/digit boundaries, plus a plural rule so a
+token matches a key or the key followed by `s`.
+
+**The correction: option 3 on its own loses coverage, in the dangerous direction.**
+Tokenizing against the original five keys was measured against a corpus of real field
+names, and it stops redacting:
+
+| Field | Old rule | Pure option 3 |
+|---|---|---|
+| `authorization` | redacted | **leaks** |
+| `apikey` | redacted | **leaks** |
+| `accesstoken` | redacted | **leaks** |
+| `secretkey` | redacted | **leaks** |
+| `tokens`, `keys`, `passwords` | redacted | **leaks** |
+
+The cause is structural, not a flaw in the splitting rule: `apikey` and `monkey` are the
+same shape — one all-lowercase token ending in `key` — so no tokenization can redact one
+and spare the other. The fix is a dictionary, not a better rule. The default key set
+gained the joined spellings, and the plural case became a matching rule rather than ten
+more entries so it applies to caller-supplied keys too.
+
+Measured on 46 credential-shaped names and 20 innocent ones: **zero coverage lost, all
+19 previously over-matched names fixed**, with a 10-key default set. `mytoken` remains
+uncovered and is documented as such — it is a single token, and only a caller-supplied
+key can reach it.
+
+The general lesson is worth keeping for other redaction questions: for this utility a
+false positive is visible and a false negative is invisible, so any change **MUST** be
+evaluated for coverage lost before it is evaluated for elegance.
 
 ---
 
