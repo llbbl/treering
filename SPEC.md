@@ -530,6 +530,34 @@ logged data is worse than the exposure it prevents when the caller did not ask.
 
 Redaction recurses into nested maps and lists, preserving container types.
 
+### 8.4 Cycles
+
+Redaction **MUST NOT** raise on a cyclic input, and **MUST NOT** substitute a marker for
+the cycle. It returns a copy whose structure mirrors the input's, cycles included.
+
+Redaction produces a *value*, not a serialization. Rendering a cycle is §4's job, and
+`"[Circular]"` is §4's vocabulary. An implementation that substitutes that marker during
+redaction becomes a second place deciding what a cycle looks like, and the two can then
+drift — which is precisely the defect OQ-3 recorded when two error serializers disagreed.
+Redaction stays narrow: it replaces sensitive values and changes nothing else.
+
+The observable result is unchanged either way. A redacted cyclic value passed to the
+serializer yields `"[Circular]"` at the cycle, because §4.1 puts it there:
+
+```
+{"name":"x","password":"[REDACTED]","self":"[Circular]"}
+```
+
+An implementation whose language cannot express a cyclic value at all is under §4's
+existing rule — it never produces the case, and **MUST NOT** invent a substitute.
+
+**Repeated references** follow from the same requirement. If two fields of the input are
+the same object, the corresponding fields of the copy are the same object. This is not
+separately observable: §4.1 requires both to serialize in full, and they do whether or
+not the copy shares them. It is stated because it falls out of any correct
+cycle-preserving implementation, and an implementation that deliberately breaks sharing
+is doing extra work to produce a less faithful copy.
+
 ---
 
 ## 9. Conformance
