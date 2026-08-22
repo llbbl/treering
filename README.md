@@ -49,8 +49,8 @@ that governs it.
 ## Status
 
 **0.1.0-draft.** Extracted from [`logan-logger`](https://github.com/llbbl/logan-logger-ts)
-v1.1.18, which is the reference implementation and does not yet pass the full suite —
-see `OPEN-QUESTIONS.md` for the specific divergences.
+v1.1.18 and revised against 2.0.2, which is the reference implementation and does not
+yet pass the full suite — see `OPEN-QUESTIONS.md` for the specific divergences.
 
 Nothing here is stable until 1.0. The envelope in particular has one unresolved
 question (OQ-7, whether `runtime` should split into `language` and `runtime`) that
