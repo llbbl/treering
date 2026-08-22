@@ -7,8 +7,17 @@
       "description": "Ordinary values pass through unchanged, in insertion order",
       "spec_ref": "§4.3",
       "pending": false,
-      "input": { "value": { "b": 1, "a": "two", "c": true, "d": null } },
-      "expect": { "json": "{\"b\":1,\"a\":\"two\",\"c\":true,\"d\":null}" }
+      "input": {
+        "value": {
+          "b": 1,
+          "a": "two",
+          "c": true,
+          "d": null
+        }
+      },
+      "expect": {
+        "json": "{\"b\":1,\"a\":\"two\",\"c\":true,\"d\":null}"
+      }
     },
     {
       "id": "serialization/circular-self",
@@ -16,9 +25,19 @@
       "spec_ref": "§4",
       "pending": false,
       "input": {
-        "value": { "$id": "root", "value": { "name": "root", "self": { "$ref": "root" } } }
+        "value": {
+          "$id": "root",
+          "value": {
+            "name": "root",
+            "self": {
+              "$ref": "root"
+            }
+          }
+        }
       },
-      "expect": { "json": "{\"name\":\"root\",\"self\":\"[Circular]\"}" }
+      "expect": {
+        "json": "{\"name\":\"root\",\"self\":\"[Circular]\"}"
+      }
     },
     {
       "id": "serialization/circular-indirect",
@@ -28,65 +47,125 @@
       "input": {
         "value": {
           "$id": "a",
-          "value": { "name": "a", "child": { "name": "b", "parent": { "$ref": "a" } } }
+          "value": {
+            "name": "a",
+            "child": {
+              "name": "b",
+              "parent": {
+                "$ref": "a"
+              }
+            }
+          }
         }
       },
-      "expect": { "json": "{\"name\":\"a\",\"child\":{\"name\":\"b\",\"parent\":\"[Circular]\"}}" }
+      "expect": {
+        "json": "{\"name\":\"a\",\"child\":{\"name\":\"b\",\"parent\":\"[Circular]\"}}"
+      }
     },
     {
       "id": "serialization/repeated-not-circular",
       "description": "The same object appearing twice as siblings is NOT circular and must serialize in full both times",
       "spec_ref": "§4.1",
-      "pending": true,
-      "pending_reason": "OQ-1. The reference implementation marks all visited objects and never unwinds, so the second occurrence emits [Circular].",
+      "pending": false,
       "input": {
         "value": {
-          "shared": { "$id": "u", "value": { "id": 7 } },
-          "first": { "$ref": "u" },
-          "second": { "$ref": "u" }
+          "shared": {
+            "$id": "u",
+            "value": {
+              "id": 7
+            }
+          },
+          "first": {
+            "$ref": "u"
+          },
+          "second": {
+            "$ref": "u"
+          }
         }
       },
-      "expect": { "json": "{\"shared\":{\"id\":7},\"first\":{\"id\":7},\"second\":{\"id\":7}}" }
+      "expect": {
+        "json": "{\"shared\":{\"id\":7},\"first\":{\"id\":7},\"second\":{\"id\":7}}"
+      }
     },
     {
       "id": "serialization/function-named",
       "description": "A named callable is replaced by its name",
       "spec_ref": "§4",
       "pending": false,
-      "input": { "value": { "cb": { "$fn": "handleRequest" } } },
-      "expect": { "json": "{\"cb\":\"[Function: handleRequest]\"}" }
+      "input": {
+        "value": {
+          "cb": {
+            "$fn": "handleRequest"
+          }
+        }
+      },
+      "expect": {
+        "json": "{\"cb\":\"[Function: handleRequest]\"}"
+      }
     },
     {
       "id": "serialization/function-anonymous",
       "description": "An unnamed callable is reported as anonymous",
       "spec_ref": "§4",
       "pending": false,
-      "input": { "value": { "cb": { "$fn": null } } },
-      "expect": { "json": "{\"cb\":\"[Function: anonymous]\"}" }
+      "input": {
+        "value": {
+          "cb": {
+            "$fn": null
+          }
+        }
+      },
+      "expect": {
+        "json": "{\"cb\":\"[Function: anonymous]\"}"
+      }
     },
     {
       "id": "serialization/undefined",
       "description": "An absent value is preserved as a marker rather than dropped",
       "spec_ref": "§4",
       "pending": false,
-      "input": { "value": { "missing": { "$undefined": true } } },
-      "expect": { "json": "{\"missing\":\"[undefined]\"}" }
+      "input": {
+        "value": {
+          "missing": {
+            "$undefined": true
+          }
+        }
+      },
+      "expect": {
+        "json": "{\"missing\":\"[undefined]\"}"
+      }
     },
     {
       "id": "serialization/bigint",
       "description": "Integers beyond native JSON range are stringified with a marker",
       "spec_ref": "§4",
       "pending": false,
-      "input": { "value": { "n": { "$bigint": "9007199254740993" } } },
-      "expect": { "json": "{\"n\":\"[BigInt: 9007199254740993]\"}" }
+      "input": {
+        "value": {
+          "n": {
+            "$bigint": "9007199254740993"
+          }
+        }
+      },
+      "expect": {
+        "json": "{\"n\":\"[BigInt: 9007199254740993]\"}"
+      }
     },
     {
       "id": "serialization/symbol",
       "description": "An interned atom is stringified with its description",
       "spec_ref": "§4",
       "pending": false,
-      "input": { "value": { "s": { "$symbol": "mySymbol" } } },
-      "expect": { "json": "{\"s\":\"[Symbol: Symbol(mySymbol)]\"}" }
+      "input": {
+        "value": {
+          "s": {
+            "$symbol": "mySymbol"
+          }
+        }
+      },
+      "expect": {
+        "json": "{\"s\":\"[Symbol: Symbol(mySymbol)]\"}"
+      }
     },
     {
       "id": "serialization/error-basic",
@@ -94,7 +173,15 @@
       "spec_ref": "§4.2",
       "pending": false,
       "input": {
-        "value": { "err": { "$error": { "name": "Error", "message": "boom", "stack": "<STACK>" } } }
+        "value": {
+          "err": {
+            "$error": {
+              "name": "Error",
+              "message": "boom",
+              "stack": "<STACK>"
+            }
+          }
+        }
       },
       "expect": {
         "json": "{\"err\":{\"name\":\"Error\",\"message\":\"boom\",\"stack\":\"<STACK>\"}}"
@@ -112,7 +199,10 @@
               "name": "HttpError",
               "message": "not found",
               "stack": "<STACK>",
-              "props": { "status": 404, "url": "/missing" }
+              "props": {
+                "status": 404,
+                "url": "/missing"
+              }
             }
           }
         }
@@ -133,8 +223,12 @@
               "name": "Error",
               "message": "hidden",
               "stack": "<STACK>",
-              "props": { "code": "E_HIDDEN" },
-              "non_enumerable": ["code"]
+              "props": {
+                "code": "E_HIDDEN"
+              },
+              "non_enumerable": [
+                "code"
+              ]
             }
           }
         }
@@ -150,8 +244,22 @@
       "pending": false,
       "input": {
         "value": {
-          "list": [1, { "$fn": "f" }, { "$undefined": true }],
-          "deep": { "deeper": { "s": { "$symbol": "x" } } }
+          "list": [
+            1,
+            {
+              "$fn": "f"
+            },
+            {
+              "$undefined": true
+            }
+          ],
+          "deep": {
+            "deeper": {
+              "s": {
+                "$symbol": "x"
+              }
+            }
+          }
         }
       },
       "expect": {
@@ -167,11 +275,21 @@
         "value": {
           "$id": "p",
           "value": {
-            "cycle": { "$ref": "p" },
-            "fn": { "$fn": null },
-            "big": { "$bigint": "170141183460469231731687303715884105727" },
-            "sym": { "$symbol": "s" },
-            "undef": { "$undefined": true }
+            "cycle": {
+              "$ref": "p"
+            },
+            "fn": {
+              "$fn": null
+            },
+            "big": {
+              "$bigint": "170141183460469231731687303715884105727"
+            },
+            "sym": {
+              "$symbol": "s"
+            },
+            "undef": {
+              "$undefined": true
+            }
           }
         }
       },

@@ -12,7 +12,9 @@
         "runtime": "node",
         "level": "info",
         "message": "User logged in",
-        "metadata": { "userId": 123 },
+        "metadata": {
+          "userId": 123
+        },
         "format": "json"
       },
       "expect": {
@@ -33,7 +35,9 @@
       },
       "expect": {
         "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"warn\",\"message\":\"disk almost full\",\"runtime\":\"node\"}",
-        "omits": ["metadata"]
+        "omits": [
+          "metadata"
+        ]
       }
     },
     {
@@ -51,7 +55,9 @@
       },
       "expect": {
         "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"info\",\"message\":\"ping\",\"runtime\":\"node\"}",
-        "omits": ["metadata"]
+        "omits": [
+          "metadata"
+        ]
       }
     },
     {
@@ -64,7 +70,9 @@
         "runtime": "node",
         "level": "info",
         "message": "User logged in",
-        "metadata": { "userId": 123 },
+        "metadata": {
+          "userId": 123
+        },
         "format": "text"
       },
       "expect": {
@@ -83,7 +91,9 @@
         "message": "connection refused",
         "format": "text"
       },
-      "expect": { "text": "[2026-08-22T04:15:30.123Z] ERROR: connection refused" }
+      "expect": {
+        "text": "[2026-08-22T04:15:30.123Z] ERROR: connection refused"
+      }
     },
     {
       "id": "envelope/case-asymmetry",
@@ -130,7 +140,13 @@
         "level": "error",
         "message": "handler failed",
         "metadata": {
-          "err": { "$error": { "name": "Error", "message": "boom", "stack": "<STACK>" } }
+          "err": {
+            "$error": {
+              "name": "Error",
+              "message": "boom",
+              "stack": "<STACK>"
+            }
+          }
         },
         "format": "json"
       },
@@ -142,31 +158,35 @@
       "id": "envelope/timestamp-disabled",
       "description": "config.timestamp=false omits the timestamp from the text form",
       "spec_ref": "§6.4",
-      "pending": true,
-      "pending_reason": "OQ-4. formatLogEntry never receives the config, so timestamp is always emitted.",
+      "pending": false,
       "input": {
         "timestamp": "2026-08-22T04:15:30.123Z",
         "runtime": "node",
         "level": "info",
         "message": "no clock",
         "format": "text",
-        "config": { "timestamp": false }
+        "config": {
+          "timestamp": false
+        }
       },
-      "expect": { "text": "INFO: no clock" }
+      "expect": {
+        "text": "INFO: no clock"
+      }
     },
     {
       "id": "envelope/colorize-never-affects-json",
       "description": "colorize applies only to the text form; JSON is never colorized",
       "spec_ref": "§6.4",
-      "pending": true,
-      "pending_reason": "OQ-4. colorize is not plumbed into the formatter at all.",
+      "pending": false,
       "input": {
         "timestamp": "2026-08-22T04:15:30.123Z",
         "runtime": "node",
         "level": "error",
         "message": "red",
         "format": "json",
-        "config": { "colorize": true }
+        "config": {
+          "colorize": true
+        }
       },
       "expect": {
         "json": "{\"timestamp\":\"2026-08-22T04:15:30.123Z\",\"level\":\"error\",\"message\":\"red\",\"runtime\":\"node\"}"
