@@ -11,10 +11,9 @@ true it is noted.
 
 ## OQ-1 — Repeated references reported as circular
 
-**Status:** resolved and shipped in `logan-logger` 2.0.0. The publish gate this was
-waiting on is met, so `serialization/repeated-not-circular` is ready to flip to
-`pending: false` — held only until the fixtures are actually executed against the
-implementation, which no test target does yet.
+**Status:** resolved and closed. Fixed in `logan-logger` 2.0.0;
+`serialization/repeated-not-circular` is active and passing under the conformance
+runner (llbbl/treering#3).
 
 `safeStringify` adds every visited object to a `WeakSet` that is never unwound:
 
@@ -112,10 +111,10 @@ branch delegates to `serializeError`, which reads all own properties via
 
 ## OQ-4 — `timestamp` and `colorize` are declared but ignored
 
-**Status:** resolved and shipped in `logan-logger` 2.0.0. The publish gate is met, so
-`envelope/timestamp-disabled` and `envelope/colorize-never-affects-json` are ready to
-flip to `pending: false` — held only until the fixtures are actually executed against
-the implementation, which no test target does yet.
+**Status:** resolved and closed. Fixed in `logan-logger` 2.0.0; both
+`envelope/timestamp-disabled` and `envelope/colorize-never-affects-json` are active and
+passing under the conformance runner (llbbl/treering#3). Their `pending_reason` text had
+gone stale — it described plumbing that 2.0.0 replaced.
 
 `LoggerConfig` declares both. `formatLogEntry(entry, format)` accepts neither, so:
 

@@ -92,3 +92,43 @@ testable against these fixtures and **SHOULD** grow a seam for it.
 | `context.json` | child loggers, shallow merge, precedence (SPEC §3) |
 | `serialization.json` | circular refs, errors, functions, bigints, symbols (SPEC §4) |
 | `redaction.json` | key matching and recursion (SPEC §8) |
+
+## What a runner must supply
+
+Written after building the first one (TypeScript, `logan-logger`). These are the
+requirements that were not obvious from the format alone.
+
+**A seam for the clock and the runtime.** 19 of the 60 cases supply a frozen `timestamp`
+and `runtime`. An implementation that reads a real clock at emit time cannot pass them.
+The seam does **not** need to be public API — the reference implementation carries it on
+a private key that no entry point re-exports, so `LoggerConfig` is unchanged. But it has
+to be inheritable by child loggers, because the `context/*` cases emit from children.
+
+**A binding table for `$id` and `$ref`.** These exist to build cycles and DAGs, so
+materialization is two-pass or single-pass-with-environment; it cannot be a plain
+recursive map.
+
+**Byte comparison, not structural.** `expect.json` and `expect.text` are exact strings.
+A structural comparison passes on output whose field order violates §2.2, which is the
+single most likely thing to differ between implementations and therefore the single
+thing most worth catching.
+
+**A guard against vacuous passing.** The easiest way to write a runner that reports 60/60
+is to silently ignore an `expect` key it does not understand. Track which expectations
+each case actually discharged and fail any case that carried one the runner never
+checked. The reference runner also rejects unknown `input` keys rather than skipping
+them. Without this, adding a fixture the runner does not understand *increases* the
+apparent pass count.
+
+**A CI guard against a missing fixture directory.** A runner that skips when fixtures are
+absent is right locally and dangerous in CI, where a broken checkout turns the whole
+suite into a silent pass. Assert the directory exists as a separate step before running.
+
+**`resource_count` needs a language-appropriate answer.** `context/child-opens-no-resources`
+asks for open handles. Counting file descriptors is not portable — the reference runner
+counts resource-owning transports constructed instead, which bounds handles from above.
+Any equivalent upper bound is acceptable; say in your report which you used.
+
+**Cases you cannot represent are skipped, with a reason, and never faked.** A language
+with no symbol type skips `serialization/symbol`. It does not invent a substitute, and it
+does not count the case as passing.

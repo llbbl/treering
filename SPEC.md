@@ -186,11 +186,22 @@ substitution.
 | function / callable | `"[Function: <name>]"`, or `"[Function: anonymous]"` if unnamed |
 | `undefined` / unset | `"[undefined]"` |
 | big integer beyond native JSON range | `"[BigInt: <decimal>]"` |
-| symbol / interned atom | `"[Symbol: <description>]"` |
+| symbol / interned atom | `"[Symbol: <language's own string form>]"` — see below |
 | error / exception | object, see §4.2 |
 
 Languages without a given concept simply never produce that case; they **MUST NOT**
 invent one.
+
+The symbol row is the one place this table defers to the host language. JavaScript's
+`Symbol.prototype.toString()` already wraps the description, so a symbol described
+`mySymbol` serializes as `[Symbol: Symbol(mySymbol)]` — the doubled word is correct and
+the fixtures pin it.
+
+Earlier revisions wrote `"[Symbol: <description>]"`, which reads as `[Symbol: mySymbol]`
+and contradicted `serialization/symbol` and `serialization/nested-mixed`. An
+implementer following the prose rather than the fixtures would have failed a case the
+prose told them to pass. Where this table and a fixture disagree, the **fixture** is
+normative — it is the thing conformance is measured against.
 
 ### 4.1 Repeated references are not circular
 
