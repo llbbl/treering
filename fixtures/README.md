@@ -100,8 +100,9 @@ testable against these fixtures and **SHOULD** grow a seam for it.
 Written after building the first one (TypeScript, `logan-logger`). These are the
 requirements that were not obvious from the format alone.
 
-**A seam for the clock and the runtime.** 19 of the 60 cases supply a frozen `timestamp`
-and `runtime`. An implementation that reads a real clock at emit time cannot pass them.
+**A seam for the clock and the runtime.** Cases that emit a record supply a frozen
+`timestamp` and `runtime` — the whole `envelope` suite, most of `context`, and one
+`redaction` case. An implementation that reads a real clock at emit time cannot pass them.
 The seam does **not** need to be public API — the reference implementation carries it on
 a private key that no entry point re-exports, so `LoggerConfig` is unchanged. But it has
 to be inheritable by child loggers, because the `context/*` cases emit from children.
@@ -115,12 +116,12 @@ A structural comparison passes on output whose field order violates §2.2, which
 single most likely thing to differ between implementations and therefore the single
 thing most worth catching.
 
-**A guard against vacuous passing.** The easiest way to write a runner that reports 60/60
-is to silently ignore an `expect` key it does not understand. Track which expectations
-each case actually discharged and fail any case that carried one the runner never
-checked. The reference runner also rejects unknown `input` keys rather than skipping
-them. Without this, adding a fixture the runner does not understand *increases* the
-apparent pass count.
+**A guard against vacuous passing.** The easiest way to write a runner that reports every
+case as passing is to silently ignore an `expect` key it does not understand. Track
+which expectations each case actually discharged and fail any case that carried one
+the runner never checked. The reference runner also rejects unknown `input` keys
+rather than skipping them. Without this, adding a fixture the runner does not
+understand *increases* the apparent pass count.
 
 **A CI guard against a missing fixture directory.** A runner that skips when fixtures are
 absent is right locally and dangerous in CI, where a broken checkout turns the whole
@@ -150,7 +151,7 @@ follow it.
 | `resource_count` | `expect.transport_instances`, `expect.open_handles` | resources a child opened (SPEC §3.3) |
 | `effective_config` | `expect.config` | the configuration after the whole precedence chain (SPEC §6) |
 | `transport_list` | `expect.transports` | the type name of each transport constructed, in order (SPEC §7.1, §7.2) |
-| `transport_context` | `expect.context` | the presentation settings a transport was handed (SPEC §7.1.2) |
+| `transport_context` | `expect.context` | the presentation settings a transport will actually format with (SPEC §7.1.2) |
 | `transport_writes` | `expect.writes` | which records reached which transport (SPEC §7.3) |
 
 ### `effective_config`
@@ -166,13 +167,94 @@ failure, and comparing against `"debug"` would let it pass.
 `colorize` has no default fixture. §6.1 makes its default runtime-dependent, so no
 portable value exists; it is asserted only where a source sets it explicitly.
 
+The `NO_COLOR` cases (§6.4.1) are the exception, and the two directions are portable for
+different reasons.
+
+`colorize: false` is portable because `NO_COLOR` forces it regardless of runtime,
+TTY-ness or any other source. `false` is the only conforming answer on every platform.
+
+`colorize: true` rests on something narrower, worth naming because it was not always
+written down. Such a case needs a source that sets it — `LOG_COLOR=true` or explicit
+config — and §6.2 puts both of those above the runtime-dependent default. That ordering
+alone is not enough: an implementation may check whether stdout is a terminal before
+coloring, and these fixtures run in CI, where stdout is a pipe. What actually makes the
+assertion portable is §6.4.1's constraint that a process-wide TTY check, in an
+implementation that has one, sits at the default tier and never overrules an explicit
+source — the same constraint `FORCE_COLOR` is now under. Without that rule a conforming
+TTY-checking implementation would fail every `colorize: true` case in the suite, for a
+reason that has nothing to do with what any of them is testing.
+
+The constraint reaches only *that* kind of check. A transport declining ANSI because of
+what it writes to is untouched by it, and untouched by these cases: see
+`transport_context` below for why they all name a transport that writes nowhere.
+
 ### `transport_list` and `transport_context`
 
 Both name transports through the ordinary `transports` configuration, so a case can mix
 built-ins with the reserved name below. Neither emits a record, so a case using them can
 also assert `"diagnostics": []`.
 
-`transport_context` reports the settings the *first* constructed transport received.
+`transport_context` reports the **effective** presentation settings of the *first*
+constructed transport: the `format`, `timestamp` and `colorize` that transport will
+actually format with, **after** it has applied its own `options` over the logger context
+per SPEC §7.1.2. Not what the logger handed in — what the transport came out holding.
+
+Spelled out, so a Go runner and a TypeScript one compute the same thing. For each of the
+three fields, the effective value is:
+
+1. the transport's own `options.<field>`, where it has one;
+2. otherwise the value the logger handed the transport, which is the resolved
+   configuration's value for that field.
+
+That is the whole rule. **The probe knows nothing about `NO_COLOR` and must not check
+it.**
+
+It does not need to. SPEC §6.4.1 requires that a vetoed `colorize` never become observable
+to a transport as `true` — not through the logger context, not through the transport's own
+`options` — so by the time the probe reaches step 1 the veto has already been applied to
+both inputs, and it falls out of those two steps on its own.
+
+Worth stating flatly, because the probe *could not* implement the carve-out itself even if
+asked to. All it sees is `context.colorize: false` next to `options.colorize: true`, and
+it cannot tell that apart from a caller who passed `colorize: false` at the logger and
+`true`
+on the transport — a case where §7.1.2 says the transport's own `true` legitimately
+**wins**. Telling them apart needs to know *why* the context value is `false`, which is
+knowledge the implementation has and a transport does not. So the guarantee is the
+implementation's to provide and the probe's to rely on.
+
+**This definition was tightened after the pre-merge one let a real regression through.**
+The kind previously reported the settings a transport "was handed", which sounds
+equivalent and is not: §6.4.1 already forces the *handed-in* `colorize` to `false`, so a
+case pairing `NO_COLOR` with `options: {colorize: true}` never consulted the transport
+option at all and passed against an implementation with no carve-out — the exact
+implementation §7.1.2 exists to reject. Removing the clamp from the reference
+implementation left the fixture green. Reporting the post-`options` value is what puts the
+carve-out under test.
+
+**What the resulting case actually catches is worth being precise about**, because on a
+first read it can look like it polices implementation strategy rather than behavior. It
+does not. The probe is a *registered* transport (§7.1.1), reached through the same public
+registry path an application would use — so it stands in for a transport that the
+implementation did not write. An implementation that clamps `colorize` only inside its
+own built-in console transport passes its own unit tests, emits perfectly uncolored
+output from everything it ships, and still fails here — correctly, because a registered
+transport carrying `options.colorize: true` would emit ANSI under `NO_COLOR` on that
+implementation.
+That is a real user-visible defect, not a difference of approach. Where the veto gets
+applied remains free; that it reaches transports the implementation does not own is the
+requirement, and SPEC §6.4.1 states it in those terms.
+
+A runner **MUST** read these values from the transport itself rather than recomputing them
+from the case's `input`. Recomputing them means asserting the runner's own arithmetic,
+which is the mistake `input.sources` already warns about above.
+
+Destination-specific color suppression (SPEC §6.4.1, "TTY detection and `FORCE_COLOR`" —
+a transport declining ANSI because it writes to a file) is also part of "effective", and
+is deliberately kept out of reach: every case using this kind names the reserved
+`fixture-registry-probe` transport, which writes nowhere and so never suppresses on a
+destination's behalf. A case that named `file` here would be asserting a platform
+decision, not a precedence rule.
 
 ### `transport_writes`
 
@@ -191,8 +273,33 @@ the same keys `levels.json` already uses.
 §7.1.1 requires the set of type names to be open, and there is no way to test a registry
 using only names that are already built in. A runner **MUST** therefore register one
 transport under the name `fixture-registry-probe` before running the suite, through the
-same public registration path an application would use. It needs no options and may
-discard everything written to it.
+same public registration path an application would use. It may discard everything written
+to it — it writes nowhere, which is also what keeps destination-specific color suppression
+out of these cases.
+
+**It must accept presentation options and expose what it resolved them to.** The probe is
+not an inert sink: `transports/no-color-outranks-a-transport-option` hands it
+`options.colorize`, and `transports/transport-option-still-wins-for-other-fields` hands it
+both `options.format` and `options.colorize`. Whatever the probe does with a record, it
+**MUST** apply SPEC §7.1.2 to those options exactly as a real transport would — preferring
+its own over the logger context, field by field — and it **MUST** make the three resolved
+values readable by the runner afterwards.
+
+**That preference is the whole of the probe's logic.** It **MUST NOT** read `NO_COLOR`,
+and it **MUST NOT** carry a special case for the §6.4.1 carve-out. A veto reaches it
+already applied to both of its inputs, which SPEC §6.4.1 requires of the implementation,
+and a
+probe that re-applied it would paper over precisely the implementations this suite exists
+to catch. Keeping the probe dumb is what makes it portable: two dozen lines in any
+language, with no environment access and no spec knowledge beyond "mine wins over theirs".
+
+That second half is what the `transport_context` rule above depends on: a runner is
+required to read those values off the transport rather than recompute them from the case's
+`input`, and it can only do that if the probe exposes them. A probe that ignores its
+options, or resolves them privately and tells no one, turns every `transport_context` case
+into an assertion about the runner's own arithmetic — which is exactly the vacuous pass
+this file warns about elsewhere. How the values are exposed is the runner's business: a
+public field, an accessor, a captured struct. That they are exposed is not.
 
 An implementation whose configuration type cannot express a registered name fails these
 cases. That is the point: §7.1.1 calls out a reference implementation that accepted any
@@ -255,6 +362,13 @@ ensure every variable in §6.3 that the case does *not* name is unset for the du
 otherwise a `LOG_LEVEL` in the developer's own shell decides whether a case asserting
 `"diagnostics": []` passes. Cases with no `env` section at all are simpler: the
 implementation is told to ignore the environment outright, since none of them is about it.
+
+**`NO_COLOR` must be neutralized the same way**, even though it is not a §6.3 variable.
+§6.4.1 makes it an override that outranks every configuration source, so a developer who
+keeps `NO_COLOR` set in their own shell — an increasingly common preference — would
+otherwise see every `colorize` assertion resolve to `false` and every disagreement case
+warn spuriously. It is the one variable outside this library's namespace that changes a
+conformance result.
 
 ### `input.files`
 

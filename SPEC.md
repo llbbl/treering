@@ -281,6 +281,12 @@ Later sources override earlier ones:
 library defaults  <  explicit config  <  environment variables
 ```
 
+**This chain is not the whole rule for `colorize`.** §6.4.1 places `NO_COLOR` above all
+three tiers — as a veto rather than a fourth source — and constrains where an optional
+TTY gate may sit. An implementation built from this section alone resolves `colorize`
+correctly for every input except the one users care about most, so read §6.4.1 before
+writing the resolver.
+
 Configuration files are deliberately **not** a tier of their own. Discovery is I/O,
 so a synchronous constructor cannot perform it, and the reference implementation
 keeps `createLogger()` synchronous. File contents therefore enter as *explicit
@@ -326,6 +332,11 @@ unrecognized-value path including the diagnostic. Implementations **MUST NOT** c
 accident if the presence check is a truthiness test, and the mandated diagnostic then
 disappears while the resulting value stays accidentally correct.
 
+This rule governs **the variables in this table**, which are the ones in this library's
+namespace. `NO_COLOR` is not one of them: it is defined by a standard this spec does not
+own, its empty value means *unset*, and §6.4.1 specifies it. The two rules are opposite on
+purpose — see §6.4.1 before making them consistent.
+
 **`LOG_LEVEL` overrides §1.3's fallback.** §1.3 resolves an unrecognized level string to
 INFO, which is right for parsing a value in isolation. Applied to an environment
 variable it is wrong: a typo in an operator's shell would *raise* verbosity on a service
@@ -362,11 +373,147 @@ form. The JSON envelope always carries a timestamp and is never colorized.
 Earlier revisions marked both as declared-but-ignored by the reference implementation.
 That is no longer true — `logan-logger` 2.0.0 honors both. See OQ-4.
 
-`colorize` alone is not sufficient to decide whether to emit ANSI. An implementation
-that writes escapes into a redirected stream corrupts every log file it touches. The
-reference implementation additionally requires stdout to be a TTY and honors `NO_COLOR`
-and `FORCE_COLOR`; this spec does not yet require that, which is a gap, not an
-endorsement of the alternative. Tracked as treering#1.
+`colorize` alone is not sufficient to decide whether to emit ANSI. An implementation that
+writes escapes into a redirected stream corrupts every log file it touches. Two things
+bear on that: the `NO_COLOR` convention, specified in §6.4.1, and whether the destination
+is an interactive terminal, which this spec still does not require — see "TTY detection
+and `FORCE_COLOR`" at the end of §6.4.1.
+
+#### 6.4.1 `NO_COLOR`
+
+An implementation **MUST** honor the [`NO_COLOR`](https://no-color.org/) convention.
+
+When the environment variable `NO_COLOR` is set to a non-empty value, `colorize`
+**MUST** resolve to `false`, regardless of what any other source says: `LOG_COLOR=true`
+(§6.3), an explicit `colorize: true` from the caller, a `colorize` read from a
+configuration file (§6.5), and a `colorize` supplied in a per-transport `options` block
+— the source easiest to miss, since §7.1.2 otherwise lets a transport prefer its own
+options. §7.1.2 carries the matching carve-out.
+
+`NO_COLOR` therefore sits **above** §6.2's precedence chain rather than inside it:
+
+```
+library defaults  <  explicit config  <  environment variables  <<  NO_COLOR
+```
+
+§6.2 orders the sources this library owns; `NO_COLOR` belongs to none, being a
+preference the user expresses to every program at once. A veto, not a setting.
+
+**But a veto nothing can observe is not enforced.** The veto **MUST** be observable in
+the resolved configuration: whatever mechanism an implementation uses, a caller
+inspecting the effective `colorize` **MUST** see `false` — otherwise the configuration
+reports `colorize: true` to everyone who asks, including every conformance case here.
+
+**The same holds at the transport boundary.** While the veto is in force, a transport
+**MUST NOT** be able to observe a `colorize` of `true` — not from the logger context it
+is handed, and not from its own `options` (§7.1.2). An implementation may arrange that
+however it likes — neutralize the option at construction, hand a vetoed value down per
+write, anything with the same observable result. What it **MUST NOT** do is apply the
+veto only inside the transports it ships itself.
+
+The reason is §7.1.1: the set of transport type names is **open**, so some transports
+are written by application authors. A clamp inside the implementation's own console
+transport never reaches a registered one, which reads `options.colorize: true` and emits
+ANSI while the user who set `NO_COLOR` watches color arrive — and its author did nothing
+wrong, since §7.1.2's design is that the logger resolves presentation *so that* a
+transport need not. The duty rests on the implementation, at the handoff.
+
+**The value carries no meaning, but emptiness does.** Presence is the entire signal, so
+`NO_COLOR=0` and `NO_COLOR=false` both disable color. `NO_COLOR=""` **MUST** be treated
+as though the variable were absent, per the convention's wording — "present and not an
+empty string". Unlike the variables in §6.3, `NO_COLOR` is **not** trimmed and **not**
+case-folded before this test: the raw value is examined, so a single space is non-empty
+and disables color.
+
+That is the exact opposite of §6.3's empty-string rule, because §6.3 governs this
+library's own namespace while `NO_COLOR`'s semantics are fixed by a standard this spec
+does not own. Implementations **SHOULD** record that reason wherever the two checks sit
+near each other in code, since the inconsistency otherwise reads as an oversight. OQ-4
+has the argument.
+
+**An opt-out from environment configuration does not reach `NO_COLOR`.** An
+implementation **MAY** offer callers a way to ignore environment-based configuration
+wholesale. Such an opt-out **MUST NOT** suppress the `NO_COLOR` veto, and an
+implementation offering one **MUST** still resolve `colorize` to `false` when `NO_COLOR`
+is set to a non-empty value. An opt-out is itself configuration, settable in a committed
+file (§6.5), so honoring it would let one checked-in line defeat `NO_COLOR` for everyone
+who runs that project. OQ-4 has the rest.
+
+**Disagreement is reported.** When `NO_COLOR` is set to a non-empty value and
+`LOG_COLOR` parses to `true` (§6.3), the user has asked for two incompatible things
+through two environment variables. `colorize` resolves to `false`, and the
+implementation **MUST** emit a diagnostic that names both variables literally — the
+strings `NO_COLOR` and `LOG_COLOR`, so a reader can grep for them and a fixture can
+assert them. It **SHOULD** also state that color was disabled and which variable won;
+that half is only a **SHOULD** because no implementation-neutral substring exists for
+it, so no conformance case can check it (OQ-4). Warn once, per §6.3.
+
+**This** diagnostic **MUST NOT** be emitted when:
+
+- `NO_COLOR` is absent, or is set to the empty string. An empty value is unset here, so
+  there is no veto in force and nothing for `LOG_COLOR` to contradict, whatever it says;
+- `LOG_COLOR` is absent, or is set to a value that does not parse to `true` under §6.3.
+  The two **agreeing** — `NO_COLOR` non-empty alongside a `LOG_COLOR` that parses to
+  `false` — is the ordinary shape of this, and it is silent;
+- `NO_COLOR` overrides a non-environment source, such as an explicit `colorize: true` in
+  code or in a configuration file. Overriding the program's own choice is the
+  convention's entire purpose, so it is not noteworthy; the diagnostic is for a user
+  contradicting themselves.
+
+The word **this** is load-bearing, and the bullets say "does not parse to `true`" rather
+than "is set" for the same reason: worded loosely they would forbid the
+unrecognized-`LOG_COLOR` warning §6.3 requires and the suite asserts. This section
+governs its own diagnostic only.
+
+##### TTY detection and `FORCE_COLOR`
+
+`colorize` is **not** required to be gated on the destination being an interactive
+terminal, and `FORCE_COLOR` is not required at all. Both are **implementation-tested
+rather than fixture-tested**: `fixtures/README.md` has no vocabulary for "stdout is not
+a terminal", so neither is reachable by a case and an implementation either way
+conforms. *Where* such a check may sit is specified here.
+
+**Two different things get called "a TTY gate", and only one is constrained.** The first
+is a check on *the process's own output stream* that takes part in resolving the
+logger's `colorize` — one question, asked once, about stdout. An implementation that has
+one **MUST** place it at the **default** tier of §6.2. It **MAY** use it to answer the
+runtime-dependent default §6.1 leaves open, the question a TTY check is good at. It
+**MUST NOT** let the check outrank an explicit `colorize` from the caller, a `colorize`
+read from a configuration file, or `LOG_COLOR` (§6.3): a caller naming `colorize` has
+already answered it.
+
+Applied to the *resolved* value instead it returns `colorize: false` whenever stdout is
+a pipe — the condition in CI, where these fixtures run — failing every case that asserts
+`colorize: true`. Pinned to the default tier it still decides every case nobody else
+did.
+
+The second is a transport deciding about *its own destination*. A transport **MAY**
+refuse to emit ANSI for the sink it writes to, whatever `colorize` it was handed and
+whatever a caller configured — §6.4's reason: escapes in a redirected stream corrupt
+every log file they touch. An unconditionally colorless file transport is correct, not a
+precedence violation; it reports that its destination cannot carry a preference rather
+than overruling one. A logger with a console and a file transport should color the first
+and not the second.
+
+The line between them is **scope, not mechanism**: "should this program use color at
+all" is precedence and is constrained, "can *this destination* carry color" is not. An
+implementation may call `isatty` in both places.
+
+**`FORCE_COLOR` is constrained the same way.** Reading it is still not required. An
+implementation that does read it **MUST** place it at the **default** tier of §6.2 —
+stated independently, since an implementation may read `FORCE_COLOR` without having a
+TTY check to anchor to. It **MUST NOT** outrank an explicit `colorize` from the caller
+or from a configuration file, or `LOG_COLOR` (§6.3), and it **MUST NOT** overturn
+`NO_COLOR` (§6.4.1) — leaving it open while pinning the TTY check would leave the
+identical hole one variable to the left. Some ecosystems let `FORCE_COLOR` beat
+`NO_COLOR`; this spec does not, for the reason settled above. `NO_COLOR` sits above the
+whole chain, so a check of either kind can only agree with it — a fact about
+*precedence* only, leaving the veto still to be made observable at the transport
+boundary, deliberately, per the rule above.
+
+That TTY detection is not *required* remains a gap, not an endorsement of the
+alternative, and is named here so it is visible rather than absent. Tracked as
+treering#1.
 
 ### 6.5 Configuration files
 
@@ -462,12 +609,59 @@ is constructed, and **MUST** prefer its own options over them where both are sup
 A transport that cannot see them has to duplicate the logger's presentation settings or
 hardcode them, and the two then drift.
 
-This applies however the transport is supplied. If an implementation offers an escape
-hatch for passing a pre-built transport object, that object has no construction step to
-receive the context, so the implementation **MUST** also accept a factory form that does.
-An escape hatch that silently cannot see the context is not equivalent to a registered
-transport, and callers will not discover the difference until their output is formatted
-wrongly.
+**The preference rule has exactly two exceptions, and both concern `colorize`.**
+
+The first runs *downward*, from configuration. Where §6.4.1 has forced `colorize` to
+`false`, a transport **MUST NOT** re-enable it from its own options. The veto reaches the
+transport, not merely the logger.
+
+Enforcing that is the **implementation's** job, not the transport author's. §6.4.1
+requires that a vetoed `colorize` never reach a transport as `true` in the first place —
+neither through the context nor through the transport's own options — so a transport
+contributed by an application author conforms by doing nothing special. That is the only
+workable arrangement, given that §7.1.1 leaves the set of transport types open.
+
+The second runs *upward*, from the destination. A transport **MAY** decline to emit ANSI
+for the sink it writes to whatever `colorize` reached it — from the logger context, from
+its own options, or from a caller who named it explicitly. §6.4.1 grants this under "TTY
+detection and `FORCE_COLOR`", and §6.4 states why it has to exist: escapes written into a
+redirected stream corrupt every log file they touch. A file transport that is
+unconditionally colorless is conforming, not a preference violation.
+
+They point in opposite directions and neither is negotiable. The first stops a transport
+turning color *on* against the user's stated preference; the second lets a transport keep
+color *off* when its destination cannot carry it. What no transport may do is the middle
+case — emit ANSI under a veto because its own options said so.
+
+The preference rule at the top of this section **MUST NOT** be read as complete on its
+own, because reading it that way is how the first exception's hole appeared. Taken alone
+the preference rule licenses exactly the wrong answer:
+`NO_COLOR` is set, the logger resolves `colorize` to `false`, a transport configured with
+`options.colorize: true` prefers its own value, escapes reach the stream — and both
+sections have been obeyed to the letter. §6.4.1 names per-transport options among the
+sources its veto outranks; the first exception above is that same rule restated where an
+implementer writing transport construction will actually be looking, because a rule that
+looks complete is the one nobody cross-checks.
+
+**The preference rule applies however the transport is supplied.** If an implementation
+offers an escape hatch for passing a pre-built transport object, that object has no
+construction step to receive the context, so the implementation **MUST** also accept a
+factory form that does. An escape hatch that silently cannot see the context is not
+equivalent to a registered transport, and callers will not discover the difference until
+their output is formatted wrongly.
+
+**So does the carve-out, and it needs a second mechanism to get there.** Phrased as "a
+transport **MUST NOT** re-enable `colorize` from its own options", the veto reaches only a
+transport that *has* options — a pre-built object with color hardcoded has none to
+suppress, emits ANSI under `NO_COLOR`, and breaks nothing written above. Offering a
+factory form closes that for callers who use it and leaves the raw-object path open. So:
+where §6.4.1 has vetoed `colorize`, an implementation offering a raw-object escape hatch
+**MUST** do one of three things — carry the veto to the object through whatever channel it
+does expose, strip ANSI from what the object writes, or decline the raw-object form under
+a veto and require the factory one. Which it picks is its own affair. What it **MUST NOT**
+do is hand a pre-built object the stream and treat the veto as that object's problem. An
+escape hatch is a thing a caller reaches for once and forgets; the user who set `NO_COLOR`
+never agreed to it.
 
 ### 7.2 Isolation
 

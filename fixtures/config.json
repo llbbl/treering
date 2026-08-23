@@ -875,6 +875,171 @@
         },
         "diagnostics": []
       }
+    },
+    {
+      "id": "config/no-color-overrides-explicit-colorize",
+      "description": "NO_COLOR set non-empty forces colorize false even when the caller passed colorize: true",
+      "spec_ref": "§6.4.1",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "NO_COLOR": "1"
+        },
+        "config": {
+          "colorize": true
+        }
+      },
+      "expect": {
+        "config": {
+          "colorize": false
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/no-color-overrides-log-color-and-warns",
+      "description": "NO_COLOR and LOG_COLOR=true disagree: color is disabled and a diagnostic names both",
+      "spec_ref": "§6.4.1",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "NO_COLOR": "1",
+          "LOG_COLOR": "true"
+        }
+      },
+      "expect": {
+        "config": {
+          "colorize": false
+        },
+        "diagnostics": [
+          "NO_COLOR",
+          "LOG_COLOR"
+        ]
+      }
+    },
+    {
+      "id": "config/no-color-empty-is-unset",
+      "description": "An empty NO_COLOR is absent, so LOG_COLOR=true still wins and nothing is reported",
+      "spec_ref": "§6.4.1",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "NO_COLOR": "",
+          "LOG_COLOR": "true"
+        }
+      },
+      "expect": {
+        "config": {
+          "colorize": true
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/no-color-value-is-irrelevant",
+      "description": "Presence is the whole signal: NO_COLOR=0 disables color rather than enabling it",
+      "spec_ref": "§6.4.1",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "NO_COLOR": "0"
+        },
+        "config": {
+          "colorize": true
+        }
+      },
+      "expect": {
+        "config": {
+          "colorize": false
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/no-color-agreeing-with-log-color-is-silent",
+      "description": "NO_COLOR with LOG_COLOR=false is not a disagreement, so no diagnostic is emitted",
+      "spec_ref": "§6.4.1",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "NO_COLOR": "1",
+          "LOG_COLOR": "false"
+        }
+      },
+      "expect": {
+        "config": {
+          "colorize": false
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/no-color-unset-does-not-override",
+      "description": "With NO_COLOR ensured unset, LOG_COLOR=true resolves normally",
+      "spec_ref": "§6.4.1",
+      "pending": false,
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "NO_COLOR": null,
+          "LOG_COLOR": "true"
+        }
+      },
+      "expect": {
+        "config": {
+          "colorize": true
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/no-color-single-space-is-set",
+      "description": "NO_COLOR set to a single space is a non-empty value and disables color",
+      "spec_ref": "§6.4.1",
+      "pending": false,
+      "note": "§6.4.1 examines the raw value: NO_COLOR is neither trimmed nor case-folded, unlike every variable in §6.3, whose trimming rule is stated as admitting no exception. An implementation that reaches for the §6.3 trim helper here turns ' ' into '' and then into 'unset', and color survives a veto the user asked for.",
+      "input": {
+        "assert": "effective_config",
+        "env": {
+          "NO_COLOR": " "
+        },
+        "config": {
+          "colorize": true
+        }
+      },
+      "expect": {
+        "config": {
+          "colorize": false
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "config/no-color-overrides-a-config-file",
+      "description": "NO_COLOR outranks a colorize read from a configuration file",
+      "spec_ref": "§6.4.1",
+      "pending": false,
+      "note": "The configuration file is the third of the three sources §6.4.1 names as outranked, and the one a project commits to a repository. Overriding the program's own choice is the convention's purpose, so this is silent: no diagnostic.",
+      "input": {
+        "assert": "effective_config",
+        "files": {
+          "logan.config.json": "{\"colorize\":true}"
+        },
+        "env": {
+          "NO_COLOR": "1"
+        }
+      },
+      "expect": {
+        "config": {
+          "colorize": false
+        },
+        "diagnostics": []
+      }
     }
   ]
 }
