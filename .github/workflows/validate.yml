@@ -1,0 +1,44 @@
+name: Validate
+
+# Treering has no runtime, no package.json, and nothing to build. What it has is
+# a set of cross-references that nothing mechanically enforced until now: a
+# fixture's spec_ref into SPEC.md, a prose file's OQ-N into OPEN-QUESTIONS.md,
+# and the agreement between seven independent "spec" fields. Each of those can
+# break without any file becoming invalid on its own, which is why they were
+# being checked by hand.
+#
+# The checks themselves live in ./scripts/validate-fixtures.sh, not inline here,
+# so a contributor runs exactly what CI runs. Inlining them would create two
+# copies that drift, and the local one would lose.
+
+on:
+  push:
+  pull_request:
+
+# Nothing here writes anything.
+permissions:
+  contents: read
+
+# A second push to the same branch supersedes the first; there is no value in
+# validating a revision nobody will look at again. Not applied to the tagging
+# workflow, where cancelling would drop a tag.
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixtures:
+    name: Fixtures and cross-references
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # jq is preinstalled on ubuntu-latest. Asserted rather than assumed,
+      # because the failure mode of a missing jq inside the script would be a
+      # confusing error partway through a check rather than a clear one here.
+      - name: Confirm jq is available
+        run: jq --version
+
+      - name: Validate fixtures and cross-references
+        run: ./scripts/validate-fixtures.sh
