@@ -1,0 +1,294 @@
+name: Tag fixtures
+
+# Cuts an annotated `fixtures-v<major>.<minor>.<patch>` tag whenever fixtures/
+# changes on main, and pushes it.
+#
+# Why this exists: downstream implementations pin a fixture tag rather than a
+# branch, so which revision they were judged against is reproducible from their
+# workflow file alone. That only works if a tag reliably exists for every
+# fixture change. Cutting them by hand means the tag lags the fixtures, and a
+# consumer's drift check then fails against a tag that was never cut.
+#
+# The version is DERIVED, never hardcoded:
+#
+#   major.minor  from the "spec" field every fixture file carries
+#                ("0.1.0-draft" -> 0.1), read through
+#                ./scripts/validate-fixtures.sh --spec-version, which also
+#                proves all seven suites agree before the value is trusted.
+#   patch        one past the highest existing tag on that major.minor line,
+#                or 0 if the line has no tags yet. So moving the spec to 0.2
+#                starts at fixtures-v0.2.0 with no edit here.
+
+on:
+  push:
+    branches: [main]
+    # First guard: GitHub does not start the run at all unless this push
+    # touched fixtures/. SPEC prose changes constantly and must not cut a tag.
+    paths:
+      - 'fixtures/**'
+
+# Pushing a tag is the only write. Nothing reads or writes issues, PRs, or
+# packages, so nothing else is granted. Note in particular that no
+# pull-requests scope is requested: the annotation's human sentence is taken
+# from the commit message via git, not from the PR API, precisely so this stays
+# at contents: write.
+permissions:
+  contents: write
+
+# Second guard, for two PRs merging in quick succession. Without serialisation
+# both runs read the tag list before either pushes, both derive the same patch
+# number, and one tag is silently lost (or, worse, points at the wrong commit).
+# cancel-in-progress is false on purpose: cancelling a queued run here does not
+# postpone work, it drops a tag that will never be cut again, because the
+# fixtures/ paths filter will not fire a second time for that commit.
+concurrency:
+  group: tag-fixtures
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Cut fixture tag
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 for two reasons: the tag list must be complete (see the
+      # note on git describe below), and the "did fixtures really change" guard
+      # diffs against the push's before-SHA, which a shallow clone lacks.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Never tag a fixture set that does not validate. A tag is a promise that
+      # downstream implementations pin; promising a suite with a duplicate id or
+      # a dangling spec_ref is worse than not tagging at all.
+      - name: Validate fixtures and cross-references
+        run: ./scripts/validate-fixtures.sh
+
+      # Third guard. The paths filter above is evaluated by GitHub over the
+      # commits in the push, which is usually right, but it is not something
+      # this workflow can assert. Diff the actual range and skip cleanly when
+      # the fixture bytes are unchanged (a revert-and-restore in one push, a
+      # re-run, a merge that touched fixtures/ only in an ancestor).
+      - name: Confirm fixtures actually changed
+        id: changed
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BEFORE:-}" ] \
+            || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+            || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            # Branch creation, or a force-push whose old tip is gone. There is
+            # no range to diff, so defer to the paths filter that started us.
+            echo "No usable before-SHA; relying on the paths filter."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --quiet "$BEFORE" "$GITHUB_SHA" -- fixtures/; then
+            echo "::notice::fixtures/ is byte-identical across ${BEFORE}..${GITHUB_SHA}. No tag needed."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --stat "$BEFORE" "$GITHUB_SHA" -- fixtures/
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Derive the next tag
+        id: version
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+
+          # The single agreed spec version, e.g. "0.1.0-draft". This exits
+          # non-zero if the seven suites disagree, so a drifted spec field can
+          # never silently produce a tag on the wrong line.
+          SPEC="$(./scripts/validate-fixtures.sh --spec-version)"
+
+          # "0.1.0-draft" -> "0.1.0" -> major 0, minor 1.
+          CORE="${SPEC%%-*}"; CORE="${CORE%%+*}"
+          MAJOR="$(printf '%s' "$CORE" | cut -d. -f1)"
+          MINOR="$(printf '%s' "$CORE" | cut -d. -f2)"
+          SERIES="${MAJOR}.${MINOR}"
+
+          # Tags are read with `git tag --list`, deliberately NOT `git describe`.
+          # git describe only sees tags reachable from HEAD, so after a revert
+          # (or any history rewrite that drops a tagged commit from the first-
+          # parent line) it reports an older tag and the next patch number
+          # collides with one already published. The tag namespace is global;
+          # read it globally.
+          git fetch --tags --force --prune origin
+
+          # Dots are regex metacharacters; escape them so the 0.1 line cannot
+          # match 0x1 or similar.
+          SERIES_RE="${SERIES//./\\.}"
+          HIGHEST="$(
+            git tag --list "fixtures-v${SERIES}.*" \
+              | grep -E "^fixtures-v${SERIES_RE}\.[0-9]+$" \
+              | sort -V \
+              | tail -n1 || true
+          )"
+
+          if [ -z "$HIGHEST" ]; then
+            # First tag on a new spec line starts at patch 0.
+            PATCH=0
+            echo "No existing tags on the ${SERIES} line; starting at patch 0."
+          else
+            PATCH=$(( ${HIGHEST##*.} + 1 ))
+            echo "Highest existing tag on the ${SERIES} line: ${HIGHEST}"
+          fi
+
+          TAG="fixtures-v${SERIES}.${PATCH}"
+          echo "spec=${SPEC}"  >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}"    >> "$GITHUB_OUTPUT"
+          echo "Derived tag: ${TAG} (spec ${SPEC})"
+
+      # Fourth guard. If the derived version already exists, either this is a
+      # re-run of a commit that was already tagged (fine, skip) or the
+      # derivation collided with a tag on a different commit (not fine, stop and
+      # say so rather than moving someone else's tag).
+      - name: Refuse to re-tag an existing version
+        id: exists
+        if: steps.changed.outputs.changed == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          REMOTE="$(git ls-remote --tags --refs origin "refs/tags/${TAG}" | awk '{print $1}')"
+          LOCAL=""
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            LOCAL="$(git rev-list -n1 "refs/tags/${TAG}")"
+          fi
+          EXISTING="${REMOTE:-$LOCAL}"
+
+          if [ -z "$EXISTING" ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # ls-remote gives the tag object's SHA for an annotated tag, so
+          # compare the commit it points at, not the object id.
+          if [ -n "$REMOTE" ]; then
+            git fetch --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}" 2>/dev/null || true
+            EXISTING="$(git rev-list -n1 "refs/tags/${TAG}" 2>/dev/null || echo "$EXISTING")"
+          fi
+
+          if [ "$EXISTING" = "$GITHUB_SHA" ]; then
+            echo "::notice::${TAG} already exists and already points at ${GITHUB_SHA}. Nothing to do."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "::error::${TAG} already exists but points at ${EXISTING}, not this commit (${GITHUB_SHA}). Refusing to move a published tag. Investigate before re-running: a tag was probably cut out of band, or two runs raced past the concurrency group."
+          exit 1
+
+      - name: Build the annotation
+        id: annotation
+        if: steps.changed.outputs.changed == 'true' && steps.exists.outputs.proceed == 'true'
+        env:
+          SPEC: ${{ steps.version.outputs.spec }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          CASES="$(jq -s '[.[].cases | length] | add // 0' fixtures/*.json)"
+          PENDING="$(jq -s '[.[].cases[] | select(.pending == true)] | length' fixtures/*.json)"
+          SUITES="$(find fixtures -maxdepth 1 -name '*.json' -type f | wc -l | tr -d ' ')"
+
+          case "$PENDING" in
+            0) PEND="none pending" ;;
+            1) PEND="1 pending" ;;
+            *) PEND="${PENDING} pending" ;;
+          esac
+
+          # Sentence one is fully derivable, so it is derived. Every number in
+          # it comes from the fixture files that are about to be tagged, which
+          # is the whole point: a hand-written count goes stale silently.
+          FIRST="Conformance fixtures, spec ${SPEC}: ${CASES} cases across ${SUITES} suites, ${PEND}."
+
+          # Sentence two is human prose about what changed, and there is no way
+          # to derive it. The best available source is the commit message. Read
+          # it with git rather than through an expression on the event payload —
+          # a commit subject is attacker-controllable text and must never be
+          # interpolated into a shell command. Here it is only ever assigned to
+          # a quoted variable and written to a file.
+          SUBJECT="$(git log -1 --format=%s "$GITHUB_SHA")"
+          BODY="$(git log -1 --format=%b "$GITHUB_SHA")"
+
+          SUMMARY=""
+          case "$SUBJECT" in
+            'Merge pull request #'*)
+              # GitHub's merge commits carry the PR title as the first body
+              # line; the subject itself is boilerplate.
+              SUMMARY="$(printf '%s\n' "$BODY" | awk 'NF {print; exit}')"
+              ;;
+            'Merge branch '*|'Merge remote-tracking branch '*|'Revert '*)
+              # No description of the fixture change is available here.
+              SUMMARY=""
+              ;;
+            *)
+              # Squash merges and direct pushes: the subject IS the PR title.
+              SUMMARY="$SUBJECT"
+              ;;
+          esac
+
+          # Trim surrounding whitespace and normalise to exactly one full stop.
+          SUMMARY="$(printf '%s' "$SUMMARY" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+
+          {
+            printf '%s' "$FIRST"
+            if [ -n "$SUMMARY" ]; then
+              printf ' %s' "${SUMMARY%.}."
+            fi
+            printf '\n'
+          } > "${RUNNER_TEMP}/tag-message.txt"
+
+          if [ -z "$SUMMARY" ]; then
+            # Deliberately not invented. A fabricated "what changed" sentence in
+            # a permanent tag annotation is worse than a missing one, because a
+            # reader cannot tell it apart from a real summary.
+            echo "::warning::No usable summary in the commit message for ${GITHUB_SHA}; tagging with the derived sentence only. Subject was: ${SUBJECT}"
+          fi
+
+          echo "Annotation for ${TAG}:"
+          cat "${RUNNER_TEMP}/tag-message.txt"
+
+      - name: Create and push the tag
+        if: steps.changed.outputs.changed == 'true' && steps.exists.outputs.proceed == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # Annotated (-a), not lightweight: the annotation is the record of
+          # what the tag contains, and `git tag -n` / the GitHub releases UI
+          # only show it for annotated tags. -F reads the message from a file so
+          # the commit-derived sentence never touches the shell.
+          git tag -a "$TAG" -F "${RUNNER_TEMP}/tag-message.txt" "$GITHUB_SHA"
+
+          # No --force. If a concurrent run got there first the push is rejected
+          # and this job goes red, which is the correct outcome: a silently
+          # overwritten fixture tag would repoint every downstream consumer that
+          # pinned it.
+          git push origin "refs/tags/${TAG}"
+
+          # This push cannot re-trigger this workflow. Two independent reasons:
+          # the `on.push.branches` filter above matches only refs/heads/main, so
+          # a refs/tags/* push is not a candidate; and GitHub does not start
+          # workflow runs from pushes made with the default GITHUB_TOKEN at all.
+          # Both hold, so a token change alone cannot introduce a loop here.
+
+          {
+            echo "### Tagged \`${TAG}\`"
+            echo
+            echo '```'
+            cat "${RUNNER_TEMP}/tag-message.txt"
+            echo '```'
+            echo
+            echo "Downstream consumers that pin fixtures still point at the previous tag."
+            echo "See \`.github/README.md\` for why that bump is not automated."
+          } >> "$GITHUB_STEP_SUMMARY"
