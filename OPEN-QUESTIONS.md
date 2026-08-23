@@ -134,11 +134,93 @@ Fixtures are marked `pending` until the implementation complies.
 options affect the text form only — the JSON envelope always carries a timestamp
 and is never colorized. Shipped in 2.0.0.
 
-One thing the spec should probably say and currently does not: the implementation
-additionally gates `colorize` on stdout being a TTY, honoring `NO_COLOR` and
-`FORCE_COLOR`. Without that gate, honoring `colorize` starts writing ANSI escapes
-into every redirected log file. Worth a normative line in §6.4, and tracked as
-[treering#1](https://github.com/llbbl/treering/issues/1).
+The spec originally said nothing about how `colorize` interacts with the environment,
+noting only that the implementation gates it on stdout being a TTY and honors `NO_COLOR`
+and `FORCE_COLOR`. Without some such gate, honoring `colorize` starts writing ANSI escapes
+into every redirected log file.
+
+**Half of that is now specified.** §6.4.1 makes `NO_COLOR` normative and gives it override
+semantics: set to a non-empty value it forces `colorize` to `false` above everything in
+§6.2's chain, its value is meaningless, an empty value means unset, and disagreement with
+`LOG_COLOR=true` disables color and warns. It reaches per-transport options too, it is
+observable in the resolved configuration rather than only at the point of writing, and no
+opt-out from environment configuration suppresses it. Ten fixtures cover it. See
+[#10](https://github.com/llbbl/treering/issues/10).
+
+**Neither TTY detection nor `FORCE_COLOR` is required**, and both remain
+[treering#1](https://github.com/llbbl/treering/issues/1). They are not merely unwritten:
+no fixture can reach them, because `fixtures/README.md` has no vocabulary for "stdout is
+not a terminal". §6.4.1 names them as implementation-tested rather than fixture-tested so
+the gap is visible in the spec instead of absent from it.
+
+**What is now specified is where each may sit.** A process-wide TTY check — one question
+about the process's own stdout, feeding the logger's resolved `colorize` — sits at §6.2's
+default tier: it may answer the runtime-dependent default, and never outranks explicit
+config or `LOG_COLOR`. `FORCE_COLOR`, where an implementation reads it, sits at that same
+tier and does not overturn `NO_COLOR`. Without those placements an implementation
+checking the *resolved* value would fail every fixture asserting `colorize: true`
+whenever stdout is a pipe, which is the condition in CI.
+
+**A transport declining ANSI for its own destination is a different thing, and is not
+constrained.** §6.4.1 says so explicitly: `logan-logger`'s file transport hardcodes
+colorless output regardless of an explicit `colorize: true`, and that is correct, not a
+precedence violation. The line the spec draws is scope — "should this program use color"
+is precedence; "can *this destination* carry color" belongs to the destination.
+
+### Why the two empty-string rules are opposite
+
+§6.3 requires an empty `LOG_COLOR` to be treated as *set* — matching nothing, taking the
+unrecognized path, and warning. §6.4.1 requires an empty `NO_COLOR` to be treated as
+*unset*. Both are correct, and an implementation that reconciles them into a single rule
+will break one of them.
+
+The difference is ownership. §6.3 governs variables in this library's own namespace, where
+an empty value is a mistake worth reporting to whoever set it. `NO_COLOR` is defined by a
+standard this spec does not own and cannot revise, and that standard says "present and not
+an empty string" — so an empty value means the user did not express the preference at all.
+
+The inconsistency is otherwise indistinguishable from an oversight, which is why §6.4.1
+asks implementations to record the reason wherever the two checks sit near each other in
+code. The reference implementation carries it as a comment beside both checks.
+
+### Why "states that color was disabled" is a SHOULD and not a MUST
+
+An earlier revision of §6.4.1 required the disagreement diagnostic both to name
+`NO_COLOR` and `LOG_COLOR` *and* to state that color was disabled. The second half was
+downgraded to **SHOULD**.
+
+`expect.diagnostics` compares substrings, which is what makes the naming half checkable in
+every language. There is no implementation-neutral substring for *"color was disabled"* —
+each implementation phrases it in its own words and often its own locale — so no
+conformance case can reach that requirement.
+
+A **MUST** that no conformance case can reach is indistinguishable from a suggestion, and
+in a spec whose premise is that its requirements are verifiable against a fixture suite,
+leaving it as a **MUST** would teach readers that some of them are decorative. It is
+written as the **SHOULD** it always was in practice. It is still a **SHOULD** rather than
+silence, because a diagnostic naming two variables and no consequence leaves the reader to
+guess which one won.
+
+### Why an environment opt-out does not suppress the veto
+
+§6.4.1 keeps one compact reason: an opt-out is itself configuration, settable in a
+committed file, so honoring it would let one checked-in line defeat `NO_COLOR` for
+everyone who runs that project. Two further reasons stand behind it.
+
+The two mechanisms answer different people. An opt-out of that kind exists so a library is
+not steered by the *host application's* operational settings. `NO_COLOR` is not an
+operational setting: it is the *end user's* preference, addressed to every program in
+their session at once, and a library was never the party it was aimed at.
+
+And the failure mode is structural rather than deliberate. An implementation that reads
+`NO_COLOR` through the same gate it uses for the §6.3 variables inherits the opt-out
+without anyone deciding to. The veto has to be checked whether or not those variables are.
+
+### Why the TTY subsection stopped being called "What is not specified"
+
+It was headed that way while both TTY detection and `FORCE_COLOR` were wholly unspecified.
+Having either remains optional, but *where* each may sit is now required, so the old title
+described only half of the section. Renamed to "TTY detection and `FORCE_COLOR`".
 
 ---
 

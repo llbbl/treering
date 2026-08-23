@@ -112,6 +112,47 @@
       }
     },
     {
+      "id": "transports/no-color-outranks-a-transport-option",
+      "description": "A transport must not re-enable colorize from its own options once NO_COLOR has vetoed it",
+      "spec_ref": "§7.1.2",
+      "pending": false,
+      "note": "§7.1.2's carve-out on §6.4.1's veto, and the reason transport_context is defined on the transport's EFFECTIVE settings rather than the settings it was handed: under the handed-in reading, §6.4.1 has already forced the incoming colorize to false, options.colorize is never consulted, and this case passes against an implementation with no carve-out at all. It lives in this suite rather than config.json because what it observes is a transport's own resolution, which is §7.1.2's assertion kind. format and timestamp carry no competing options here and are asserted only as passthrough; transports/transport-option-still-wins-for-other-fields is the case that shows the preference rule surviving the carve-out. This tests reach, not strategy: the probe is a REGISTERED transport, so it stands in for one the implementation did not write. Where the veto gets applied stays free — §6.4.1 permits neutralizing the option at construction, resolving presentation centrally and handing the vetoed value down per write, or anything with the same observable result. What fails here is applying it only inside the transports the implementation ships itself, which leaves any registered transport carrying options.colorize:true emitting ANSI under NO_COLOR.",
+      "input": {
+        "assert": "transport_context",
+        "env": { "NO_COLOR": "1" },
+        "config": { "format": "text", "timestamp": true, "colorize": true },
+        "transports": [
+          { "type": "fixture-registry-probe", "options": { "colorize": true } }
+        ]
+      },
+      "expect": {
+        "context": { "format": "text", "timestamp": true, "colorize": false },
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "transports/transport-option-still-wins-for-other-fields",
+      "description": "Under a NO_COLOR veto a transport still prefers its own format over the logger's",
+      "spec_ref": "§7.1.2",
+      "pending": false,
+      "note": "The companion to transports/no-color-outranks-a-transport-option, and the direction in which the preference rule must WIN. The carve-out is scoped to colorize alone: with NO_COLOR set and the same transport carrying both options.format and options.colorize, format must come back json — the transport's value, not the logger's text — while colorize comes back false. An implementation that reacts to the veto by ignoring per-transport options wholesale passes the sibling case and fails this one.",
+      "input": {
+        "assert": "transport_context",
+        "env": { "NO_COLOR": "1" },
+        "config": { "format": "text", "timestamp": true, "colorize": true },
+        "transports": [
+          {
+            "type": "fixture-registry-probe",
+            "options": { "format": "json", "colorize": true }
+          }
+        ]
+      },
+      "expect": {
+        "context": { "format": "json", "timestamp": true, "colorize": false },
+        "diagnostics": []
+      }
+    },
+    {
       "id": "transports/construction-failure-does-not-block-others",
       "description": "A transport that throws while being built leaves the rest working",
       "spec_ref": "§7.2",
